@@ -8,6 +8,7 @@ from alembic import context
 from backend.app.config import settings
 from backend.app.database import Base
 from backend.app.models.chat import ChatSession, ChatMessage
+from backend.app.models.knowledge import Transcript, TranscriptChunk
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

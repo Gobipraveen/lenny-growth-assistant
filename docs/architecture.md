@@ -78,55 +78,97 @@ The planned PostgreSQL relational schema supports multi-turn chat sessions, pers
 * `metadata` (JSONB): Word count, generation parameters, skill attributes.
 * `created_at` (TIMESTAMP WITH TIME ZONE).
 
-### 3.4 `transcripts` & `chunks`
-* `episode_id` (VARCHAR(100), Primary Key): Episode slug / identifier.
-* `title` (TEXT), `guest` (VARCHAR(255)), `published_date` (DATE).
-* `chunk_id` (UUID, Primary Key): Chunk identifier.
-* `chunk_text` (TEXT), `embedding` (VECTOR(1536) or local embedding size).
-* `metadata` (JSONB): Timestamps, speaker markers.
+### 3.4 `transcripts`
+* `id` (UUID, Primary Key): Deterministic UUIDv5 identifier based on `episode_slug`.
+* `episode_slug` (VARCHAR(255), Unique, Indexed): Slug identifier (e.g., `brian-chesky`).
+* `title` (VARCHAR(500), Indexed): Full episode title.
+* `guest` (VARCHAR(255), Indexed): Primary guest name.
+* `youtube_url` (VARCHAR(500)): Canonical YouTube recording URL.
+* `video_id` (VARCHAR(50)): YouTube video identifier.
+* `publish_date` (VARCHAR(50)): Episode publication date.
+* `description` (TEXT): Episode description and overview.
+* `duration_seconds` (FLOAT): Episode duration in seconds.
+* `duration` (VARCHAR(50)): Human-readable duration (HH:MM:SS).
+* `view_count` (INTEGER): View count at archival time.
+* `channel` (VARCHAR(100)): Channel name.
+* `keywords` (JSON): Curated keyword tags from dataset.
+* `source_repo` (VARCHAR(255)): Source repository provenance (`ChatPRD/lennys-podcast-transcripts`).
+* `source_file_path` (VARCHAR(500)): Relative file path in archive.
+* `content_hash` (VARCHAR(64)): SHA-256 hash of raw file for incremental re-ingestion.
+* `raw_content` (TEXT): Full raw markdown content.
+* `chunk_count` (INTEGER): Number of child chunks created.
+* `created_at` / `updated_at` (TIMESTAMP WITH TIME ZONE).
+
+### 3.5 `transcript_chunks`
+* `id` (UUID, Primary Key): Deterministic UUIDv5 identifier based on transcript UUID and chunk index.
+* `transcript_id` (UUID, Foreign Key $\rightarrow$ `transcripts.id` ON DELETE CASCADE).
+* `chunk_index` (INTEGER): Zero-indexed sequence number in episode.
+* `speaker` (VARCHAR(255), Indexed): Primary speaker in chunk passage.
+* `start_timestamp` (VARCHAR(50)): First timestamp in chunk (e.g. `00:05:04`).
+* `end_timestamp` (VARCHAR(50)): Final timestamp in chunk.
+* `content` (TEXT): Formatted speaker-attributed chunk text.
+* `content_hash` (VARCHAR(64)): SHA-256 hash of chunk content.
+* `char_count` (INTEGER), `word_count` (INTEGER).
+* `tsv` (TSVECTOR): PostgreSQL full-text search vector with weights (Title 'A', Guest 'A', Speaker 'B', Content 'C').
+* Indexes:
+  * `uq_transcript_chunk_index`: Unique constraint on `(transcript_id, chunk_index)`.
+  * `ix_transcript_chunks_tsv`: GIN index on `tsv`.
+  * `ix_transcript_chunks_speaker`: B-Tree index on `speaker`.
 
 ---
 
-## 4. API Endpoints Contract (Provisional)
+## 4. API Endpoints Contract
 
 | Method | Endpoint | Description | Status |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Operational health check of backend services. | **Implemented (Task 01)** |
-| `GET` | `/api/v1/models` | List available LLM backends (Ollama status & Cloud availability). | Planned |
 | `POST` | `/api/sessions` | Create a new isolated chat session. | **Implemented (Task 02)** |
 | `GET` | `/api/sessions` | List active sessions with summaries. | **Implemented (Task 02)** |
 | `GET` | `/api/sessions/{session_id}` | Retrieve a specific chat session. | **Implemented (Task 02)** |
 | `GET` | `/api/sessions/{session_id}/messages` | Retrieve conversation history for a session. | **Implemented (Task 02)** |
 | `POST` | `/api/sessions/{session_id}/messages` | Persist a message in a session. | **Implemented (Task 02)** |
+| `GET` | `/api/knowledge/search` | Search indexed transcripts using ranked FTS. | **Implemented (Task 03)** |
+| `GET` | `/api/knowledge/status` | Ingested transcripts & chunk counts status. | **Implemented (Task 03)** |
+| `GET` | `/api/v1/models` | List available LLM backends (Ollama & Cloud). | Planned |
 | `POST` | `/api/v1/chat` | Send prompt and receive streaming response with citations. | Planned |
 | `GET` | `/api/v1/artifacts/{id}` | Retrieve generated artifact for in-app viewer. | Planned |
 
 ---
 
-## 5. Ingestion & Grounding Flow
+## 5. Ingestion & Retrieval Architecture (Task 03)
 
+### 5.1 Authoritative Dataset
+* **Source:** `https://github.com/ChatPRD/lennys-podcast-transcripts` (main branch).
+* **Archive Size:** ~8.75 MB compressed zip containing 303 episode transcripts (`episodes/{guest-slug}/transcript.md`).
+* **Licensing:** No formal open source license (marked `None` on GitHub). The archive README specifies educational and research use with all rights reserved by Lenny Rachitsky and guests. Raw downloaded files are excluded from git via `.gitignore` (`data/`).
+
+### 5.2 Ingestion Workflow
 ```
-[Raw Lenny Transcripts]
-       │
-       ▼
-[Text Cleaning & Normalization]
-       │
-       ▼
-[Chunking (500-800 tokens with speaker preservation)]
-       │
-       ▼
-[Embedding Generation (Local Ollama / Cloud)]
-       │
-       ▼
-[Vector Store / PostgreSQL pgvector / Chroma]
+[ChatPRD Zip Archive / Local Directory]
+                  │
+                  ▼
+[Discovery & Content Hash Computation]
+                  │
+       Is Hash Unchanged?
+         ├── Yes ──> [Skip Episode (Incremental Idempotency)]
+         └── No  ──> [Parse Markdown Frontmatter & Speaker Turns]
+                  │
+                  ▼
+[Speaker-Aware & Paragraph-Aware Chunking (1200 chars, 200 overlap)]
+                  │
+                  ▼
+[PostgreSQL Weighted TSVECTOR Generation (Title A, Guest A, Speaker B, Content C)]
+                  │
+                  ▼
+[Atomic Transaction: Upsert Transcript + Chunks + GIN Index]
 ```
 
-### Retrieval & Query Pipeline
-1. User prompt is received by the backend.
-2. Query Rewriter extracts key tactical product concepts.
-3. Hybrid search (BM25 keyword + semantic vector similarity) retrieves top $K$ relevant transcript chunks.
-4. If relevance score falls below threshold $\theta$, the agent explicitly acknowledges that transcripts do not contain the answer.
-5. Grounded prompt context is injected into the selected model with strict citation instructions.
+### 5.3 Retrieval Pipeline
+The retrieval service (`BaseRetriever` interface) provides pluggable search capabilities:
+1. **Tier 1 (Strict Websearch):** Executes `websearch_to_tsquery('english', query)` using GIN index for exact phrases and boolean syntax.
+2. **Tier 2 (Plainto TSQuery):** Executes `plainto_tsquery('english', query)` if Tier 1 yields no results.
+3. **Tier 3 (Multi-Term Ranked Fallback):** For natural language queries with multiple keywords, executes ranked `to_tsquery('english', 'token1 | token2 | ...')`, ranked with `ts_rank_cd(tc.tsv, q)`, filtered to require $\ge \min(2, N)$ matching tokens to prevent single-word false matches.
+4. **Empty / Unsupported Queries:** Returns 0 results cleanly without fabricated evidence.
 
 ---
 

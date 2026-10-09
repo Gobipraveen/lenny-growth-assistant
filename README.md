@@ -203,6 +203,43 @@ Example API Response (`GET /api/sessions`):
 
 ---
 
+## Transcript Ingestion & Knowledge Base (Task 03)
+
+The Lenny Growth Assistant retrieves source-grounded insights from transcripts in the authoritative archive:
+[https://github.com/ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts).
+
+### Ingestion CLI Operations
+
+All ingestion operations are performed via `scripts/ingest.py`:
+
+```powershell
+# 1. View current knowledge base status
+.\.venv\Scripts\python.exe scripts/ingest.py --status
+
+# 2. Download and ingest the deterministic flagship dataset (10 core growth episodes)
+.\.venv\Scripts\python.exe scripts/ingest.py --download --flagship
+
+# 3. Ingest all available transcripts (all 300+ episodes)
+.\.venv\Scripts\python.exe scripts/ingest.py --download --all
+
+# 4. Ingest specific episodes by slug
+.\.venv\Scripts\python.exe scripts/ingest.py --episodes brian-chesky shreyas-doshi
+
+# 5. Force re-chunking and re-indexing even if content hashes match
+.\.venv\Scripts\python.exe scripts/ingest.py --flagship --force
+```
+
+### Knowledge Base API Endpoints
+
+* **Search Transcripts:**
+  `GET /api/knowledge/search?q=product+market+fit&limit=5`
+  Returns matching passages, speaker attribution, start/end timestamps, relevance score, episode title, guest name, and canonical YouTube URL.
+* **Knowledge Base Status:**
+  `GET /api/knowledge/status`
+  Returns total indexed transcripts, chunk counts, search engine status, and episode summaries.
+
+---
+
 ## Frontend Build Verification
 
 To verify the production build of the frontend:

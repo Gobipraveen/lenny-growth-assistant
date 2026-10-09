@@ -34,6 +34,7 @@ client = TestClient(app, raise_server_exceptions=False)
 
 @pytest.fixture(autouse=True)
 def setup_db():
+    app.dependency_overrides[get_db] = override_get_db
     # We do NOT create or drop all tables here because this is the real PostgreSQL DB
     # that should be managed by Alembic. We will just yield.
     # The tests should clean up any data they create.
