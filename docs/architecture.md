@@ -93,8 +93,11 @@ The planned PostgreSQL relational schema supports multi-turn chat sessions, pers
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | Operational health check of backend services. | **Implemented (Task 01)** |
 | `GET` | `/api/v1/models` | List available LLM backends (Ollama status & Cloud availability). | Planned |
-| `POST` | `/api/v1/sessions` | Create a new isolated chat session. | Planned |
-| `GET` | `/api/v1/sessions` | List active sessions with summaries. | Planned |
+| `POST` | `/api/sessions` | Create a new isolated chat session. | **Implemented (Task 02)** |
+| `GET` | `/api/sessions` | List active sessions with summaries. | **Implemented (Task 02)** |
+| `GET` | `/api/sessions/{session_id}` | Retrieve a specific chat session. | **Implemented (Task 02)** |
+| `GET` | `/api/sessions/{session_id}/messages` | Retrieve conversation history for a session. | **Implemented (Task 02)** |
+| `POST` | `/api/sessions/{session_id}/messages` | Persist a message in a session. | **Implemented (Task 02)** |
 | `POST` | `/api/v1/chat` | Send prompt and receive streaming response with citations. | Planned |
 | `GET` | `/api/v1/artifacts/{id}` | Retrieve generated artifact for in-app viewer. | Planned |
 

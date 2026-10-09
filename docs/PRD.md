@@ -83,3 +83,10 @@ Because the initial client brief contained operational ambiguities, the followin
 - [x] Minimal React + Vite application with split-panel layout placeholder.
 - [x] Safe `.gitignore` and `.env.example` with zero exposed secrets.
 - [x] No fake AI responses or unverified functionality.
+
+## 6. Acceptance Criteria for Task 02
+- [x] PostgreSQL persistence implemented for independent conversational sessions.
+- [x] Alembic migrations configured and generated for ChatSession and ChatMessage schemas.
+- [x] Database API endpoints (`POST/GET /api/sessions`, `GET/POST .../messages`) completed.
+- [x] Comprehensive automated test suite ensuring isolated operations.
+- [x] Secure manual database setup script without hardcoded secrets.

@@ -107,6 +107,27 @@ Copy-Item .env.example .env
 
 Ensure `.env` contains safe default parameters. No actual API keys or secrets are committed.
 
+### 4. Database Setup (PostgreSQL)
+
+You must manually initialize the PostgreSQL database and application role securely:
+
+1. Run the initialization script as the PostgreSQL administrator (e.g. `postgres` user) to create the role and database:
+   ```powershell
+   psql -U postgres -h 127.0.0.1 -p 5432 -f scripts\setup_db.sql
+   ```
+2. Set a secure password for the `lenny_app` role using the interactive prompt:
+   ```powershell
+   psql -U postgres -h 127.0.0.1 -p 5432 -c "\password lenny_app"
+   ```
+3. Run the configuration helper to securely inject your URL-encoded password into your `.env` file:
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\configure_db_env.py
+   ```
+4. Apply the initial Alembic migration to create tables in the `lenny_assistant` database:
+   ```powershell
+   .\.venv\Scripts\alembic upgrade head
+   ```
+
 ---
 
 ## Running the Application Locally
@@ -144,7 +165,41 @@ Run the backend pytest suite:
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-All health check tests and schema validations will run and report status.
+All API endpoints and health check tests will run.
+Note: For testing resilience, the unit test suite (`tests/test_chat.py`) uses an isolated in-memory SQLite database (`sqlite:///:memory:`) via dependency injection to avoid accidental manipulation of the PostgreSQL development database.
+
+### Running PostgreSQL Integration Tests
+
+To verify functionality against the real PostgreSQL database:
+
+```powershell
+$env:RUN_POSTGRES_TESTS="1"
+.\.venv\Scripts\pytest.exe tests\test_postgres_integration.py -v
+```
+
+This verifies actual persistence, indexing, and foreign-key behavior inside PostgreSQL using disposable test data.
+
+---
+
+## Verifying Persistence Across Restarts
+
+1. Start the FastAPI backend and create a session.
+2. Terminate the FastAPI process (`Ctrl+C`).
+3. Restart the FastAPI backend.
+4. Issue a `GET /api/sessions` request to verify the session remains available.
+
+Example API Response (`GET /api/sessions`):
+```json
+[
+  {
+    "title": "My Session",
+    "user_metadata": {},
+    "id": "e81c01e6-9ab5-46ba-b847-bb0364d26210",
+    "created_at": "2026-10-09T15:00:00Z",
+    "updated_at": "2026-10-09T15:00:00Z"
+  }
+]
+```
 
 ---
 
@@ -174,3 +229,9 @@ cd ..
    ```powershell
    ollama list
    ```
+
+3. **Database Connection Errors:**
+   If the API returns `500 Internal Server Error` (e.g. `No module named 'psycopg'` or `password authentication failed`), verify that:
+   - You used `configure_db_env.py` to securely store your password in `.env`.
+   - Your `.env` URL contains `postgresql+psycopg2://` (or `postgresql://` which the backend config automatically handles).
+   - PostgreSQL is running on `127.0.0.1:5432`.
