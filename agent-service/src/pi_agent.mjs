@@ -8,6 +8,7 @@ import {
   ModelRuntime
 } from "@earendil-works/pi-coding-agent";
 import { config, SUPPORTED_PROVIDERS } from "./config.mjs";
+import { executeSkillWorkflow } from "../skills/ship30/index.mjs";
 
 // Ensure runtime directory exists
 if (!fs.existsSync(config.agentDataDir)) {
@@ -288,9 +289,10 @@ User Question:
 ${message}`;
 
       // Bounded inference execution
+      let timerId;
       const promptPromise = session.prompt(promptPayload);
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => {
+        timerId = setTimeout(() => {
           const tErr = new Error(`Inference timed out after ${config.requestTimeoutMs}ms.`);
           tErr.statusCode = 504;
           tErr.code = "INFERENCE_TIMEOUT";
@@ -298,7 +300,11 @@ ${message}`;
         }, config.requestTimeoutMs);
       });
 
-      await Promise.race([promptPromise, timeoutPromise]);
+      try {
+        await Promise.race([promptPromise, timeoutPromise]);
+      } finally {
+        if (timerId) clearTimeout(timerId);
+      }
 
       const rawAnswer = session.getLastAssistantText() || "";
       const durationMs = Date.now() - startTime;
@@ -334,6 +340,163 @@ ${message}`;
         provider: selectedProvider,
         model: selectedModel,
         durationMs
+      };
+    } catch (err) {
+      if (session) {
+        try {
+          await session.abort();
+        } catch (_) {}
+      }
+      throw err;
+    } finally {
+      if (session) {
+        session.dispose();
+      }
+      releaseLock();
+    }
+  }
+
+  /**
+   * Generates a 5-section Ship 30 for 30 essay using the Pi Agent SDK and verified transcript evidence.
+   * Executes sequentially in bounded sections under strict tool-restricted conditions (tools: []).
+   */
+  async generateShip30Essay({
+    sessionId,
+    topic,
+    audience = "Product managers, growth leads, and founders",
+    intendedOutcome = "A practical framework and actionable decision rules",
+    provenApproach = "framework",
+    fourAPath = "actionable",
+    targetWordCount = 1250,
+    candidatePassages = [],
+    provider = config.defaultProvider,
+    model = null,
+  }) {
+    const releaseLock = await acquireLock(sessionId || "default");
+    const startTime = Date.now();
+
+    const selectedProvider = provider || config.defaultProvider;
+    if (!SUPPORTED_PROVIDERS.includes(selectedProvider)) {
+      releaseLock();
+      const err = new Error(`Unsupported provider '${selectedProvider}'. Supported: ${SUPPORTED_PROVIDERS.join(", ")}`);
+      err.statusCode = 400;
+      err.code = "INVALID_PROVIDER";
+      throw err;
+    }
+
+    const selectedModel = model || (selectedProvider === "anthropic" ? config.anthropicModel : config.ollamaModel);
+
+    if (selectedProvider === "anthropic" && !config.anthropicApiKey) {
+      releaseLock();
+      const err = new Error("Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).");
+      err.statusCode = 400;
+      err.code = "MISSING_CLOUD_CREDENTIALS";
+      throw err;
+    }
+
+    // Fail-closed immediately if evidence is missing
+    if (!candidatePassages || candidatePassages.length === 0) {
+      releaseLock();
+      return executeSkillWorkflow({
+        input: {
+          topic,
+          audience,
+          intended_outcome: intendedOutcome,
+          proven_approach: provenApproach,
+          four_a_path: fourAPath,
+          target_word_count: targetWordCount,
+          verified_evidence: [],
+        },
+        generateFn: null,
+      });
+    }
+
+    const modelsPath = syncModelsConfig();
+    let modelRuntime;
+    let targetModel;
+    try {
+      modelRuntime = await ModelRuntime.create({ modelsPath });
+      targetModel = modelRuntime.getModel(selectedProvider, selectedModel);
+      if (!targetModel) {
+        releaseLock();
+        const err = new Error(`Model '${selectedModel}' for provider '${selectedProvider}' is not configured in models.json.`);
+        err.statusCode = 400;
+        err.code = "MODEL_NOT_FOUND";
+        throw err;
+      }
+    } catch (mErr) {
+      if (mErr.code === "MODEL_NOT_FOUND" || mErr.statusCode === 400) throw mErr;
+      releaseLock();
+      const err = new Error(`Failed to load model runtime: ${mErr.message}`);
+      err.statusCode = 500;
+      err.code = "RUNTIME_INIT_ERROR";
+      throw err;
+    }
+
+    const cwd = config.agentDataDir;
+    const agentDir = config.agentDataDir;
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager,
+    });
+    await resourceLoader.reload();
+
+    let session;
+    try {
+      // Restrict all system tools: essay generation runs in a completely sandbox-isolated session
+      const sessionResult = await createAgentSession({
+        cwd,
+        agentDir,
+        settingsManager,
+        resourceLoader,
+        model: targetModel,
+        modelRuntime,
+        sessionManager: SessionManager.inMemory(),
+        tools: [],
+      });
+      session = sessionResult.session;
+
+      // Sequential section generation function
+      const generateSectionFn = async ({ section, plan, priorSectionsText, prompt }) => {
+        let timerId;
+        const promptPromise = session.prompt(prompt);
+        const timeoutPromise = new Promise((_, reject) => {
+          timerId = setTimeout(() => {
+            const tErr = new Error(`Section generation timed out after ${config.requestTimeoutMs}ms.`);
+            tErr.statusCode = 504;
+            tErr.code = "INFERENCE_TIMEOUT";
+            reject(tErr);
+          }, config.requestTimeoutMs);
+        });
+        try {
+          await Promise.race([promptPromise, timeoutPromise]);
+          return session.getLastAssistantText() || "";
+        } finally {
+          if (timerId) clearTimeout(timerId);
+        }
+      };
+
+      const skillResult = await executeSkillWorkflow({
+        input: {
+          topic,
+          audience,
+          intended_outcome: intendedOutcome,
+          proven_approach: provenApproach,
+          four_a_path: fourAPath,
+          target_word_count: targetWordCount,
+          verified_evidence: candidatePassages,
+        },
+        generateSectionFn,
+      });
+
+      return {
+        ...skillResult,
+        provider: selectedProvider,
+        model: selectedModel,
+        duration_ms: Date.now() - startTime,
       };
     } catch (err) {
       if (session) {

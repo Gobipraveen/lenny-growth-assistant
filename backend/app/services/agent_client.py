@@ -51,7 +51,7 @@ class AgentClient:
         timeout: Optional[float] = None,
     ):
         self.base_url = (base_url or settings.AGENT_SERVICE_URL).rstrip("/")
-        self._internal_secret = internal_secret or settings.AGENT_INTERNAL_SECRET
+        self._internal_secret = internal_secret if internal_secret is not None else settings.AGENT_INTERNAL_SECRET
         self.timeout = timeout if timeout is not None else float(settings.AGENT_SERVICE_TIMEOUT)
 
     def _get_headers(self) -> Dict[str, str]:
@@ -150,6 +150,94 @@ class AgentClient:
             err_msg = data.get("error", f"Agent service error with HTTP {response.status_code}")
             err_code = data.get("code", "AGENT_ERROR")
             logger.error(f"Agent service returned error (HTTP {response.status_code}): {err_msg}")
+            raise AgentResponseError(
+                err_msg,
+                status_code=502 if response.status_code >= 500 else response.status_code,
+                code=err_code,
+            )
+
+        if not isinstance(data, dict) or not data.get("success", False) or "data" not in data:
+            raise AgentResponseError("Agent service response missing successful data envelope", status_code=502)
+
+        return data["data"]
+
+    async def generate_essay(
+        self,
+        session_id: UUID,
+        topic: str,
+        audience: Optional[str] = None,
+        intended_outcome: Optional[str] = None,
+        proven_approach: Optional[str] = None,
+        four_a_path: Optional[str] = None,
+        target_word_count: Optional[int] = None,
+        candidate_passages: Optional[List[Dict[str, Any]]] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Send Ship 30 essay generation request to Agent Service."""
+        url = f"{self.base_url}/essay"
+        payload: Dict[str, Any] = {
+            "session_id": str(session_id),
+            "topic": topic,
+            "audience": audience or "Product managers, growth leads, and founders",
+            "intended_outcome": intended_outcome or "A practical framework and actionable decision rules",
+            "proven_approach": proven_approach or "framework",
+            "four_a_path": four_a_path or "actionable",
+            "target_word_count": target_word_count or 1250,
+            "candidate_passages": candidate_passages or [],
+        }
+        if provider:
+            payload["provider"] = provider
+        if model:
+            payload["model"] = model
+
+        secret = (self._internal_secret or "").strip()
+        if not secret:
+            raise AgentResponseError(
+                message="Security configuration error: AGENT_INTERNAL_SECRET must be configured and non-empty",
+                status_code=500,
+                code="SECRET_NOT_CONFIGURED",
+            )
+
+        call_timeout = timeout if timeout is not None else 300.0
+
+        logger.info(
+            f"Calling Agent Service at {self.base_url}/essay for session {session_id} "
+            f"(topic='{topic}', passages={len(payload['candidate_passages'])})"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=call_timeout) as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers=self._get_headers(),
+                )
+        except httpx.TimeoutException as exc:
+            logger.error(f"Agent service timed out during essay generation after {call_timeout}s")
+            raise AgentTimeoutError(f"Agent service timed out during essay generation after {call_timeout}s") from exc
+        except (httpx.ConnectError, httpx.NetworkError) as exc:
+            logger.error(f"Agent service connection failed: {type(exc).__name__}")
+            raise AgentConnectionError("Agent service is unavailable or connection was refused") from exc
+        except httpx.RequestError as exc:
+            logger.error(f"Agent service request error: {type(exc).__name__}")
+            raise AgentConnectionError(f"Agent service request failed: {type(exc).__name__}") from exc
+
+        if response.status_code == 401:
+            logger.error("Agent service rejected internal token during essay generation")
+            raise AgentResponseError("Unauthorized: Agent bridge authentication failed", status_code=502, code="AUTH_FAILED")
+
+        try:
+            data = response.json()
+        except Exception as exc:
+            logger.error(f"Agent service returned non-JSON response: HTTP {response.status_code}")
+            raise AgentResponseError(f"Agent service returned invalid non-JSON response: HTTP {response.status_code}") from exc
+
+        if response.status_code != 200:
+            err_msg = data.get("error", f"Agent service error with HTTP {response.status_code}")
+            err_code = data.get("code", "AGENT_ERROR")
+            logger.error(f"Agent service returned error for /essay (HTTP {response.status_code}): {err_msg}")
             raise AgentResponseError(
                 err_msg,
                 status_code=502 if response.status_code >= 500 else response.status_code,

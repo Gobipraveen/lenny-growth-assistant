@@ -53,6 +53,27 @@ describe("Agent Service Isolated Tests", () => {
       }
       return this.mockResult;
     }
+
+    async generateShip30Essay(args) {
+      this.lastGenerateEssayArgs = args;
+      if (this.shouldThrow) {
+        throw this.shouldThrow;
+      }
+      return {
+        title: "How to Build an 11-Star Experience",
+        markdown: "# How to Build an 11-Star Experience\n\nContent...",
+        word_count: 1250,
+        target_word_count: 1250,
+        citations: [
+          { chunk_id: "test-chunk-123", guest: "Brian Chesky" }
+        ],
+        evidence_chunk_ids: ["test-chunk-123"],
+        generation_status: "success",
+        provider: args.provider || "ollama",
+        model: args.model || "qwen2.5:1.5b",
+        duration_ms: 120
+      };
+    }
   }
 
   before(async () => {
@@ -124,7 +145,7 @@ describe("Agent Service Isolated Tests", () => {
     const { execSync } = await import("node:child_process");
     let caught = false;
     try {
-      execSync('node -e "delete process.env.AGENT_INTERNAL_SECRET; import(\'./src/config.mjs\');"', {
+      execSync('node -e "process.env.AGENT_INTERNAL_SECRET = \'\'; import(\'./src/config.mjs\');"', {
         cwd: path.resolve(__dirname, ".."),
         env: { ...process.env, AGENT_INTERNAL_SECRET: "" },
         stdio: "pipe"
@@ -244,38 +265,46 @@ describe("Agent Service Isolated Tests", () => {
     tErr.statusCode = 504;
     mockManager.shouldThrow = tErr;
 
-    const res = await fetch(`${baseUrl}/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": config.internalSecret
-      },
-      body: JSON.stringify({ message: "Trigger timeout" })
-    });
+    try {
+      const res = await fetch(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Token": config.internalSecret
+        },
+        body: JSON.stringify({ message: "Trigger timeout" })
+      });
 
-    assert.equal(res.status, 504);
-    const body = await res.json();
-    assert.equal(body.success, false);
-    assert.equal(body.code, "INFERENCE_TIMEOUT");
+      assert.equal(res.status, 504);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.equal(body.code, "INFERENCE_TIMEOUT");
+    } finally {
+      mockManager.shouldThrow = null;
+    }
   });
 
   test("POST /chat maps internal errors to HTTP 500", async () => {
     const genErr = new Error("Unexpected internal crash");
     mockManager.shouldThrow = genErr;
 
-    const res = await fetch(`${baseUrl}/chat`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Internal-Token": config.internalSecret
-      },
-      body: JSON.stringify({ message: "Trigger 500" })
-    });
+    try {
+      const res = await fetch(`${baseUrl}/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Token": config.internalSecret
+        },
+        body: JSON.stringify({ message: "Trigger 500" })
+      });
 
-    assert.equal(res.status, 500);
-    const body = await res.json();
-    assert.equal(body.success, false);
-    assert.equal(body.code, "INTERNAL_ERROR");
+      assert.equal(res.status, 500);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.equal(body.code, "INTERNAL_ERROR");
+    } finally {
+      mockManager.shouldThrow = null;
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -391,5 +420,101 @@ describe("Agent Service Isolated Tests", () => {
     assert.equal(session.model.id, config.ollamaModel);
 
     session.dispose();
+  });
+
+  // ---------------------------------------------------------------------------
+  // 8. POST /essay Route & Contract Verification
+  // ---------------------------------------------------------------------------
+  test("POST /essay rejects missing X-Internal-Token with 401", async () => {
+    const res = await fetch(`${baseUrl}/essay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "Product Strategy" })
+    });
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.code, "UNAUTHORIZED");
+  });
+
+  test("POST /essay rejects incorrect X-Internal-Token with 401", async () => {
+    const res = await fetch(`${baseUrl}/essay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Token": "wrong-secret-token"
+      },
+      body: JSON.stringify({ topic: "Product Strategy" })
+    });
+    assert.equal(res.status, 401);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.code, "UNAUTHORIZED");
+  });
+
+  test("POST /essay rejects empty or missing topic with 400", async () => {
+    const res = await fetch(`${baseUrl}/essay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Token": config.internalSecret
+      },
+      body: JSON.stringify({ topic: "   " })
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.code, "BAD_REQUEST");
+  });
+
+  test("POST /essay rejects unsupported provider with 400", async () => {
+    const res = await fetch(`${baseUrl}/essay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Token": config.internalSecret
+      },
+      body: JSON.stringify({ topic: "Product Strategy", provider: "invalid_cloud" })
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.success, false);
+    assert.equal(body.code, "INVALID_PROVIDER");
+  });
+
+  test("POST /essay successfully generates essay and returns data matching contract", async () => {
+    const res = await fetch(`${baseUrl}/essay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Token": config.internalSecret
+      },
+      body: JSON.stringify({
+        session_id: "test-sess-1",
+        topic: "11-Star Product Experience",
+        audience: "Founders",
+        intended_outcome: "Practical Framework",
+        proven_approach: "framework",
+        four_a_path: "actionable",
+        target_word_count: 1250,
+        candidate_passages: [
+          {
+            chunk_id: "test-chunk-123",
+            episode_title: "Brian Chesky on Airbnb",
+            guest: "Brian Chesky",
+            content: "Designing an 11-star experience was key."
+          }
+        ]
+      })
+    });
+
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.success, true);
+    assert.equal(body.data.title, "How to Build an 11-Star Experience");
+    assert.equal(body.data.word_count, 1250);
+    assert.equal(body.data.generation_status, "success");
+    assert.equal(body.data.citations.length, 1);
+    assert.equal(body.data.citations[0].chunk_id, "test-chunk-123");
   });
 });

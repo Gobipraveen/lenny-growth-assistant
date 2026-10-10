@@ -44,7 +44,7 @@ function sendJson(res, statusCode, data) {
 export function createAgentServer(customAgentManager = null) {
   const agentManager = customAgentManager || new PiAgentManager();
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
 
     // Health check endpoint
@@ -131,6 +131,64 @@ export function createAgentServer(customAgentManager = null) {
       }
     }
 
+    // Ship 30 Essay Generation endpoint
+    if (req.method === "POST" && url.pathname === "/essay") {
+      // Validate Internal Token without echoing secret
+      const authHeader = req.headers["x-internal-token"];
+      if (!authHeader || authHeader !== config.internalSecret) {
+        return sendJson(res, 401, {
+          success: false,
+          error: "Unauthorized: Invalid internal token",
+          code: "UNAUTHORIZED"
+        });
+      }
+
+      try {
+        const payload = await parseJsonBody(req);
+        if (!payload.topic || typeof payload.topic !== "string" || !payload.topic.trim()) {
+          return sendJson(res, 400, {
+            success: false,
+            error: "Bad Request: non-empty 'topic' string is required",
+            code: "BAD_REQUEST"
+          });
+        }
+
+        if (payload.provider && !SUPPORTED_PROVIDERS.includes(payload.provider)) {
+          return sendJson(res, 400, {
+            success: false,
+            error: `Bad Request: unsupported provider '${payload.provider}'. Supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
+            code: "INVALID_PROVIDER"
+          });
+        }
+
+        const result = await agentManager.generateShip30Essay({
+          sessionId: payload.session_id,
+          topic: payload.topic.trim(),
+          audience: payload.audience,
+          intendedOutcome: payload.intended_outcome,
+          provenApproach: payload.proven_approach,
+          fourAPath: payload.four_a_path,
+          targetWordCount: payload.target_word_count,
+          candidatePassages: Array.isArray(payload.candidate_passages) ? payload.candidate_passages : [],
+          provider: payload.provider,
+          model: payload.model,
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: result
+        });
+      } catch (err) {
+        console.error("[PiAgentService] Error in /essay:", err.message);
+        const statusCode = err.statusCode || (err.code === "INFERENCE_TIMEOUT" ? 504 : 500);
+        return sendJson(res, statusCode, {
+          success: false,
+          error: err.message,
+          code: err.code || "INTERNAL_ERROR"
+        });
+      }
+    }
+
     // Not Found
     return sendJson(res, 404, {
       success: false,
@@ -138,6 +196,10 @@ export function createAgentServer(customAgentManager = null) {
       code: "NOT_FOUND"
     });
   });
+
+  server.requestTimeout = 310000;
+  server.timeout = 310000;
+  return server;
 }
 
 // Auto-start listener only when executed directly as script

@@ -7,6 +7,7 @@ from backend.app.routers.knowledge import (
     router as knowledge_router,
     internal_router as internal_knowledge_router,
 )
+from backend.app.routers.essay import router as essay_router
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -28,6 +29,7 @@ app.add_middleware(
 # Include routers
 app.include_router(health_router)
 app.include_router(chat_router)
+app.include_router(essay_router)
 app.include_router(knowledge_router)
 app.include_router(internal_knowledge_router)
 

@@ -17,6 +17,7 @@ class ChatSession(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
+    essays = relationship("Essay", back_populates="session", cascade="all, delete-orphan", order_by="Essay.created_at")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
