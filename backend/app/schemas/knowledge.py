@@ -27,6 +27,13 @@ class KnowledgeSearchResponse(BaseModel):
     results: List[KnowledgeSearchResult] = Field(default_factory=list, description="Matching passage results")
 
 
+class InternalSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=500, description="Search query string")
+    limit: int = Field(5, ge=1, le=10, description="Maximum number of results to return")
+    guest: Optional[str] = Field(None, description="Optional guest filter")
+    episode: Optional[str] = Field(None, description="Optional episode slug filter")
+
+
 class EpisodeSummary(BaseModel):
     slug: str
     title: str

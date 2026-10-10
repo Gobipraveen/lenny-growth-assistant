@@ -97,7 +97,17 @@ npm install
 cd ..
 ```
 
-### 3. Environment Configuration
+### 3. Agent Service Setup (Node.js Pi Agent)
+
+Install agent service Node dependencies:
+
+```powershell
+cd agent-service
+npm install
+cd ..
+```
+
+### 4. Environment Configuration
 
 Copy the example environment configuration:
 
@@ -105,9 +115,16 @@ Copy the example environment configuration:
 Copy-Item .env.example .env
 ```
 
-Ensure `.env` contains safe default parameters. No actual API keys or secrets are committed.
+Ensure `.env` contains safe parameters. Generate and configure the private internal bridge shared secret:
 
-### 4. Database Setup (PostgreSQL)
+```powershell
+# Generate a cryptographically secure random token:
+.\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Add the generated token to `.env` as `AGENT_INTERNAL_SECRET=<your_token>`. Both FastAPI and the Node.js Pi Agent Service read this secret to authenticate inter-process requests. If missing or blank, both services fail closed.
+
+### 5. Database Setup (PostgreSQL)
 
 You must manually initialize the PostgreSQL database and application role securely:
 
@@ -132,40 +149,70 @@ You must manually initialize the PostgreSQL database and application role secure
 
 ## Running the Application Locally
 
-### Running the Backend
+The application components run in separate processes. Because this development system has 8 GB RAM, start services sequentially and ensure at least 1.5 GB free RAM before running live local LLM inference.
 
-Start the FastAPI development server:
+### 1. Start Ollama (Local LLM)
 
+In terminal 1:
+```powershell
+ollama serve
+```
+Ensure the default model is downloaded:
+```powershell
+ollama pull qwen2.5:1.5b
+```
+
+### 2. Start the Node.js Pi Agent Service
+
+In terminal 2:
+```powershell
+cd agent-service
+node src/server.mjs
+```
+* Service Health: [http://127.0.0.1:8001/health](http://127.0.0.1:8001/health)
+
+### 3. Start the FastAPI Backend
+
+In terminal 3:
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-
 * API Root: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 * Health Endpoint: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+* Provider Status: [http://127.0.0.1:8000/api/sessions/status](http://127.0.0.1:8000/api/sessions/status)
 * Interactive Swagger Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### Running the Frontend
+### 4. Start the Frontend
 
-In a separate terminal window:
-
+In terminal 4:
 ```powershell
 cd frontend
 npm run dev
 ```
-
 * Frontend UI: [http://localhost:5173/](http://localhost:5173/)
 
 ---
 
 ## Running Automated Tests
 
-Run the backend pytest suite:
+### Backend Python Tests (pytest)
+Run all backend unit and mock integration tests (health, sessions, knowledge, agent bridge & quality):
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -v
 ```
 
-All API endpoints and health check tests will run.
+### Agent Service Node.js Tests
+Run isolated unit tests for the Pi Agent Service:
+
+```powershell
+cd agent-service
+npm test
+cd ..
+```
+
+
+All API endpoints, health check, session isolation, and agent bridge tests will run.
 Note: For testing resilience, the unit test suite (`tests/test_chat.py`) uses an isolated in-memory SQLite database (`sqlite:///:memory:`) via dependency injection to avoid accidental manipulation of the PostgreSQL development database.
 
 ### Running PostgreSQL Integration Tests

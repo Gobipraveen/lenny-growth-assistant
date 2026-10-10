@@ -1,18 +1,23 @@
+import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, Header, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
+from backend.app.config import settings
 from backend.app.database import get_db
 from backend.app.schemas.common import APIResponse, ErrorResponse
 from backend.app.schemas.knowledge import (
     KnowledgeSearchResponse,
     KnowledgeSearchResult,
     KnowledgeStatusResponse,
+    InternalSearchRequest,
     EpisodeSummary,
 )
 from backend.app.services.retrieval import get_retriever
 from backend.app.models.knowledge import Transcript, TranscriptChunk
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["Knowledge"])
 
@@ -112,4 +117,74 @@ def get_knowledge_status(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to query knowledge status: {str(e)}",
+        )
+
+
+# Internal router for Node.js Agent Service bridge
+internal_router = APIRouter(prefix="/api/internal/knowledge", tags=["Internal Knowledge"])
+
+
+@internal_router.post(
+    "/search",
+    response_model=APIResponse[KnowledgeSearchResponse],
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid query payload"},
+        401: {"model": ErrorResponse, "description": "Unauthorized internal token"},
+        500: {"model": ErrorResponse, "description": "Internal retrieval error"},
+    },
+)
+def internal_search_knowledge(
+    search_req: InternalSearchRequest,
+    x_internal_token: Optional[str] = Header(None, alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+):
+    """Internal search endpoint for the Pi Agent Service.
+
+    Protected by internal shared secret token.
+    """
+    configured_secret = (settings.AGENT_INTERNAL_SECRET or "").strip()
+    if not configured_secret:
+        logger.error("Security fault: AGENT_INTERNAL_SECRET is not configured on backend.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal bridge configuration error: shared secret is not configured.",
+        )
+
+    if not x_internal_token or x_internal_token.strip() != configured_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Invalid internal agent bridge token",
+        )
+
+    cleaned_query = search_req.query.strip()
+    if not cleaned_query:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Search query cannot be empty or contain only whitespace.",
+        )
+
+    try:
+        retriever = get_retriever(db)
+        results = retriever.search(
+            query=cleaned_query,
+            limit=search_req.limit,
+            offset=0,
+            guest=search_req.guest,
+            episode_slug=search_req.episode,
+        )
+
+        return APIResponse(
+            success=True,
+            message="Internal search completed successfully",
+            data=KnowledgeSearchResponse(
+                query=cleaned_query,
+                total_results=len(results),
+                results=results,
+            ),
+        )
+    except Exception as e:
+        logger.error(f"Internal retrieval error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred during internal retrieval: {str(e)}",
         )

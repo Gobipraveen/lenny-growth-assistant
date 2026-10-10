@@ -29,7 +29,13 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3"
     ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
     OPENAI_API_KEY: str = ""
+
+    # Agent Service Configuration (Node.js Pi Agent Service)
+    AGENT_SERVICE_URL: str = "http://127.0.0.1:8001"
+    AGENT_INTERNAL_SECRET: str = ""
+    AGENT_SERVICE_TIMEOUT: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",

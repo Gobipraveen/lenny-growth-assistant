@@ -129,8 +129,9 @@ The planned PostgreSQL relational schema supports multi-turn chat sessions, pers
 | `POST` | `/api/sessions/{session_id}/messages` | Persist a message in a session. | **Implemented (Task 02)** |
 | `GET` | `/api/knowledge/search` | Search indexed transcripts using ranked FTS. | **Implemented (Task 03)** |
 | `GET` | `/api/knowledge/status` | Ingested transcripts & chunk counts status. | **Implemented (Task 03)** |
-| `GET` | `/api/v1/models` | List available LLM backends (Ollama & Cloud). | Planned |
-| `POST` | `/api/v1/chat` | Send prompt and receive streaming response with citations. | Planned |
+| `GET` | `/api/sessions/status` | Live LLM provider & agent service availability. | **Implemented (Task 04)** |
+| `POST` | `/api/sessions/{session_id}/chat` | Multi-turn chat turn with verified transcript citations. | **Implemented (Task 04)** |
+| `POST` | `/api/internal/knowledge/search` | Authenticated internal retrieval endpoint for Pi agent. | **Implemented (Task 04)** |
 | `GET` | `/api/v1/artifacts/{id}` | Retrieve generated artifact for in-app viewer. | Planned |
 
 ---
@@ -140,7 +141,7 @@ The planned PostgreSQL relational schema supports multi-turn chat sessions, pers
 ### 5.1 Authoritative Dataset
 * **Source:** `https://github.com/ChatPRD/lennys-podcast-transcripts` (main branch).
 * **Archive Size:** ~8.75 MB compressed zip containing 303 episode transcripts (`episodes/{guest-slug}/transcript.md`).
-* **Licensing:** No formal open source license (marked `None` on GitHub). The archive README specifies educational and research use with all rights reserved by Lenny Rachitsky and guests. Raw downloaded files are excluded from git via `.gitignore` (`data/`).
+* **Licensing:** Educational and research use with all rights reserved by Lenny Rachitsky and guests. Raw downloaded files are excluded from git via `.gitignore` (`data/`).
 
 ### 5.2 Ingestion Workflow
 ```
@@ -172,11 +173,58 @@ The retrieval service (`BaseRetriever` interface) provides pluggable search capa
 
 ---
 
-## 6. Flexible Model Switcher & Local-First Strategy
+## 6. Agent Architecture & Multi-Provider Strategy (Task 04)
 
-* **Local Inference (Mandatory for Demo):** Runs against local Ollama (`http://localhost:11434`) using models such as `llama3` or `qwen2.5`.
-* **Cloud Fallback / Toggle:** Supports Anthropic Claude or OpenAI via standard SDK adapters.
-* **Failure Handling:** If local Ollama is offline or experiences GPU out-of-memory errors, the backend returns clear diagnostic errors without crashing.
+The agent layer uses a decoupled bridge architecture connecting the FastAPI backend to an isolated Node.js agent service running the **Pi Coding Agent SDK** (`@earendil-works/pi-coding-agent`):
+
+```
+[User Request via API / Frontend]
+               │
+               ▼
+   [FastAPI POST /api/sessions/{id}/chat]
+               │
+               ├─► Validate Session Existence in PostgreSQL
+               ├─► Retrieve Candidate Passages (PostgreSQL FTS)
+               ├─► Package Context & Prior History (last 10 turns)
+               │
+               ▼  (HTTP POST http://127.0.0.1:8001/chat + X-Internal-Token)
+   [Node.js Pi Agent Service (src/server.mjs)]
+               │
+               ├─► Authenticate Shared Secret (fail-closed)
+               ├─► Initialize ModelRuntime with syncModelsConfig()
+               ├─► Create AgentSession with tools: ["search_transcripts"]
+               │   (Disables all coding tools: bash, read, write, edit, grep)
+               │
+               ▼
+      [LLM Inference Engine]
+         ├── Local: Ollama (qwen2.5:1.5b via http://127.0.0.1:11434/v1)
+         └── Cloud: Anthropic Claude (claude-3-5-sonnet via API key)
+               │
+               ├─► Synthesize grounded response using transcript evidence
+               ├─► Call search_transcripts tool if additional data needed
+               │
+               ▼
+   [FastAPI Response Processing & Verification]
+               │
+               ├─► Verify citations against genuine PostgreSQL chunk IDs
+               ├─► Populate citation metadata from database records
+               ├─► Strip unverified or fabricated citation identifiers
+               ├─► Atomically persist User & Assistant ChatMessages
+               ▼
+   [Return APIResponse[ChatTurnResponse]]
+```
+
+### 6.1 Tool Allowlisting & Security Isolation
+* To protect the host system, the Pi Coding Agent SDK is configured with an explicit allowlist: `tools: ["search_transcripts"]`.
+* Built-in file system and shell execution tools (`bash`, `read`, `write`, `edit`, `find`, `grep`, `powershell`) are strictly excluded.
+* Inter-process communication between FastAPI and the agent service is secured using an internal shared secret (`X-Internal-Token`).
+
+### 6.2 Provider Switching & Configuration
+* **Default Provider:** Local Ollama (`qwen2.5:1.5b`).
+* **Cloud Provider:** Anthropic Claude (`claude-3-5-sonnet-20241022`).
+* Provider selection is dynamic via `.env` or per-request override (`ChatTurnRequest.provider`), requiring zero source code modifications.
+* There is no silent fallback: if Ollama fails, the error is returned immediately rather than incurring silent cloud charges.
+* `agent-service/.pi_runtime/models.json` is generated deterministically at runtime via `syncModelsConfig()`, ensuring 100% reproducible deployment without committing credentials.
 
 ---
 
@@ -185,3 +233,4 @@ The retrieval service (`BaseRetriever` interface) provides pluggable search capa
 1. **Untrusted Content Isolation:** All model-generated HTML/CSS is isolated within sandboxed `<iframe>` instances with strict CSP rules.
 2. **Secrets Protection:** No API keys are hardcoded. Centralized configuration reads strictly from `.env`.
 3. **CORS Enforcement:** Backend strictly restricts origins to authorized frontend development servers (`http://localhost:5173`).
+4. **Internal Agent Bridge Security:** Fixed internal token verification with fail-closed semantics; services bind strictly to loopback (`127.0.0.1`).

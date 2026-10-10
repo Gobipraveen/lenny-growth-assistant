@@ -1,0 +1,5 @@
+node_modules/
+.pi_runtime/
+auth.json
+models-store.json
+*.log
