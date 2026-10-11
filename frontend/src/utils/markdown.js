@@ -121,3 +121,172 @@ export function renderSafeInline(text, keyPrefix = '') {
     return part;
   });
 }
+
+/**
+ * Parses markdown into structured semantic block tokens:
+ * - heading (level 1-4, text)
+ * - paragraph (lines)
+ * - blockquote (lines)
+ * - ul (items)
+ * - ol (items)
+ * - table (rows)
+ * - code_block (lang, code)
+ * - hr
+ */
+export function parseMarkdownBlocks(markdown = '') {
+  if (!markdown || typeof markdown !== 'string') {
+    return [];
+  }
+
+  const blocks = [];
+  const rawSections = markdown.split(/(```[\s\S]*?```)/g);
+
+  rawSections.forEach((section, sIdx) => {
+    if (section.startsWith('```') && section.endsWith('```')) {
+      const firstLineBreak = section.indexOf('\n');
+      let lang = '';
+      let code = '';
+      if (firstLineBreak !== -1) {
+        lang = section.slice(3, firstLineBreak).trim();
+        code = section.slice(firstLineBreak + 1, -3);
+      } else {
+        code = section.slice(3, -3);
+      }
+      blocks.push({
+        type: 'code_block',
+        id: `code-${sIdx}`,
+        lang,
+        code,
+      });
+      return;
+    }
+
+    const rawLines = section.split('\n');
+    let currentBlock = null;
+
+    const flushCurrent = () => {
+      if (currentBlock) {
+        blocks.push(currentBlock);
+        currentBlock = null;
+      }
+    };
+
+    let idx = 0;
+    while (idx < rawLines.length) {
+      const line = rawLines[idx];
+      const trimmed = line.trim();
+
+      if (!trimmed) {
+        flushCurrent();
+        idx++;
+        continue;
+      }
+
+      // Horizontal Rule
+      if (/^(?:---|\*\*\*|___)$/.test(trimmed)) {
+        flushCurrent();
+        blocks.push({ type: 'hr', id: `hr-${sIdx}-${idx}` });
+        idx++;
+        continue;
+      }
+
+      // Headings: H1 - H4
+      const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+      if (hMatch) {
+        flushCurrent();
+        const level = hMatch[1].length;
+        blocks.push({
+          type: 'heading',
+          level,
+          id: `h-${sIdx}-${idx}`,
+          text: hMatch[2].trim(),
+        });
+        idx++;
+        continue;
+      }
+
+      // Blockquote
+      if (trimmed.startsWith('>')) {
+        const quoteText = trimmed.replace(/^>\s*/, '');
+        if (currentBlock && currentBlock.type === 'blockquote') {
+          currentBlock.lines.push(quoteText);
+        } else {
+          flushCurrent();
+          currentBlock = {
+            type: 'blockquote',
+            id: `quote-${sIdx}-${idx}`,
+            lines: [quoteText],
+          };
+        }
+        idx++;
+        continue;
+      }
+
+      // Table line
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        if (currentBlock && currentBlock.type === 'table') {
+          currentBlock.rows.push(trimmed);
+        } else {
+          flushCurrent();
+          currentBlock = {
+            type: 'table',
+            id: `tbl-${sIdx}-${idx}`,
+            rows: [trimmed],
+          };
+        }
+        idx++;
+        continue;
+      }
+
+      // Unordered List item (- or *)
+      const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+      if (ulMatch) {
+        if (currentBlock && currentBlock.type === 'ul') {
+          currentBlock.items.push(ulMatch[1]);
+        } else {
+          flushCurrent();
+          currentBlock = {
+            type: 'ul',
+            id: `ul-${sIdx}-${idx}`,
+            items: [ulMatch[1]],
+          };
+        }
+        idx++;
+        continue;
+      }
+
+      // Ordered List item (1. )
+      const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (olMatch) {
+        if (currentBlock && currentBlock.type === 'ol') {
+          currentBlock.items.push(olMatch[1]);
+        } else {
+          flushCurrent();
+          currentBlock = {
+            type: 'ol',
+            id: `ol-${sIdx}-${idx}`,
+            items: [olMatch[1]],
+          };
+        }
+        idx++;
+        continue;
+      }
+
+      // Standard Paragraph line
+      if (currentBlock && currentBlock.type === 'paragraph') {
+        currentBlock.lines.push(line);
+      } else {
+        flushCurrent();
+        currentBlock = {
+          type: 'paragraph',
+          id: `p-${sIdx}-${idx}`,
+          lines: [line],
+        };
+      }
+      idx++;
+    }
+    flushCurrent();
+  });
+
+  return blocks;
+}

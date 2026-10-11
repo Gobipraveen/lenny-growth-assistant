@@ -7,24 +7,142 @@
 import { ESSAY_DEFAULTS } from "./contracts.mjs";
 
 /**
+ * Safely detects and removes an OUTER Markdown code fence enclosing an entire generated section or document.
+ * Preserves the inner draft prose and any genuine embedded code blocks within.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripOuterMarkdownFence(text = "") {
+  if (!text || typeof text !== "string") return "";
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("```")) return trimmed;
+
+  const lines = trimmed.split("\n");
+  const firstLine = lines[0].trim();
+  if (!/^```(?:markdown|md|text)?$/i.test(firstLine)) {
+    return trimmed;
+  }
+  const lastLine = lines[lines.length - 1].trim();
+  if (lastLine !== "```") {
+    return trimmed;
+  }
+
+  // Check if the opening fence was already closed before the final line.
+  // An inner code block (e.g. ```python ... ```) can exist inside an outer markdown fence.
+  let insideInnerFence = false;
+  let outerClosedEarly = false;
+
+  for (let i = 1; i < lines.length - 1; i++) {
+    const l = lines[i].trim();
+    if (l.startsWith("```")) {
+      if (!insideInnerFence) {
+        if (l === "```") {
+          // A bare closing fence when not inside an inner fence means the outer fence closed early
+          outerClosedEarly = true;
+          break;
+        } else {
+          // Opening an inner code block
+          insideInnerFence = true;
+        }
+      } else {
+        // Closing the inner code block
+        insideInnerFence = false;
+      }
+    }
+  }
+
+  if (outerClosedEarly) {
+    return trimmed;
+  }
+
+  // Remove the first and last lines (the outer fences)
+  return lines.slice(1, lines.length - 1).join("\n").trim();
+}
+
+/**
  * Deterministically counts English words in a markdown string,
  * ignoring frontmatter and markdown syntax noise.
+ * Correctly distinguishes outer fenced draft prose from genuine embedded code.
  * @param {string} text
  * @returns {number}
  */
 export function countWords(text = "") {
   if (!text || typeof text !== "string") return 0;
 
-  // Strip frontmatter if present
+  // 1. Strip frontmatter if present
   let cleanText = text.replace(/^---[\s\S]*?---\s*/, "");
 
-  // Strip code blocks and urls to count actual prose words
+  // 2. Unwrap outer markdown fence if the entire text is enclosed in one
+  cleanText = stripOuterMarkdownFence(cleanText);
+
+  // 3. Unwrap any inner blocks explicitly fenced as ```markdown or ```md (draft sections)
+  cleanText = cleanText.replace(/```(?:markdown|md)\s*\n([\s\S]*?)\n?```/gi, " $1 ");
+
+  // 4. Strip genuine embedded code blocks (e.g. ```python, ```js, ```sql, or unlabeled ```code```)
   cleanText = cleanText.replace(/```[\s\S]*?```/g, " ");
+
+  // 5. Strip URLs
   cleanText = cleanText.replace(/https?:\/\/[^\s)]+/g, " ");
 
-  // Match sequences of non-whitespace characters
+  // 6. Match word tokens
   const words = cleanText.trim().match(/[A-Za-z0-9_'\u00C0-\u024F-]+/g);
   return words ? words.length : 0;
+}
+
+/**
+ * Extracts compact citation tokens (e.g. [S1], (S1), (S2:00:06:46), [SOURCE: S1], [S1, S2], (S1, S2))
+ * from a text string. Rejects loose prose occurrences and non-citation parentheticals.
+ * @param {string} text
+ * @returns {Array<{ tokenNumber: string, rawToken: string, shortId: string }>}
+ */
+export function extractCompactCitationTokens(text = "") {
+  if (!text || typeof text !== "string") return [];
+
+  const results = [];
+  // Matches enclosed bracketed [...] or parenthesized (...) blocks without newlines
+  const blockRegex = /(?:\[([^\]\n]+)\]|\(([^)\n]+)\))/g;
+  const singleTokenRegex = /^(?:SOURCE:?\s*)?S(\d+)(?:\s*:\s*\d{1,2}:\d{2}(?::\d{2})?)?$/i;
+
+  let match;
+  while ((match = blockRegex.exec(text)) !== null) {
+    const rawInner = (match[1] !== undefined ? match[1] : match[2]) || "";
+    const inner = rawInner.trim();
+    if (!inner) continue;
+
+    // Reject blocks that contain full UUID markers like [chunk_id: ...] or [chunk: ...]
+    // (those are handled separately by UUID citation extractors)
+    if (/^chunk(?:_id)?\b/i.test(inner)) continue;
+
+    // Split by comma or semicolon to allow multiple tokens inside one enclosure
+    const parts = inner.split(/[,;]/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length === 0) continue;
+
+    // Check if ALL parts are valid citation token formats
+    let allPartsValid = true;
+    const tokensInBlock = [];
+
+    for (const part of parts) {
+      const tokenMatch = part.match(singleTokenRegex);
+      if (tokenMatch) {
+        tokensInBlock.push({
+          tokenNumber: tokenMatch[1],
+          rawToken: `S${tokenMatch[1]}`,
+          shortId: `s${tokenMatch[1]}`,
+        });
+      } else {
+        allPartsValid = false;
+        break;
+      }
+    }
+
+    if (allPartsValid && tokensInBlock.length > 0) {
+      for (const t of tokensInBlock) {
+        results.push(t);
+      }
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -65,7 +183,8 @@ export function validateEssay({
     };
   }
 
-  const trimmedMarkdown = markdown.trim();
+  // Normalize outer fences before validation checks
+  const trimmedMarkdown = stripOuterMarkdownFence(markdown.trim());
   const wordCount = countWords(trimmedMarkdown);
 
   // 2. Word count range validation
@@ -118,29 +237,56 @@ export function validateEssay({
   }
 
   // 5. Citation and evidence validation
-  // Build lookup map of valid supplied chunks
+  // Build lookup maps of valid supplied chunks: by UUID and by compact token S1, S2, ...
   const validChunkIds = new Map();
-  for (const p of verifiedEvidence) {
+  const validShortIds = new Map();
+
+  verifiedEvidence.forEach((p, idx) => {
     if (p && p.chunk_id) {
-      validChunkIds.set(p.chunk_id.toString().toLowerCase(), p);
+      const cId = p.chunk_id.toString().toLowerCase();
+      validChunkIds.set(cId, p);
+      // Compact citation tokens: S1, S2, ...
+      validShortIds.set(`s${idx + 1}`, p);
+      if (p.source_token) {
+        validShortIds.set(p.source_token.toString().toLowerCase(), p);
+      }
     }
-  }
-
-  // Find all cited chunk IDs in markdown (e.g., [chunk_id: xxx], (chunk_id: xxx), chunk_id="xxx")
-  const citationPattern = /chunk_id(?::|=|\s+is\s+|:\s*)["']?([a-zA-Z0-9_-]{8,})["']?/gi;
-  const foundChunkIds = new Set();
-  let match;
-
-  while ((match = citationPattern.exec(trimmedMarkdown)) !== null) {
-    foundChunkIds.add(match[1].toLowerCase());
-  }
+  });
 
   const validCitations = [];
   const invalidCitationIds = [];
+  const seenValidChunkIds = new Set();
+  const foundChunkIds = new Set();
 
-  for (const citedId of foundChunkIds) {
+  // Find compact citations: [S1], [s1], [SOURCE: S1], [SOURCE S1], (S1), (S2:00:06:46), etc.
+  const compactTokens = extractCompactCitationTokens(trimmedMarkdown);
+  for (const { shortId, rawToken } of compactTokens) {
+    if (validShortIds.has(shortId)) {
+      const passage = validShortIds.get(shortId);
+      const cId = passage.chunk_id.toString().toLowerCase();
+      foundChunkIds.add(cId);
+      if (!seenValidChunkIds.has(cId)) {
+        seenValidChunkIds.add(cId);
+        validCitations.push(passage);
+      }
+    } else {
+      invalidCitationIds.push(rawToken);
+    }
+  }
+
+  // Find UUID citations: chunk_id="...", [chunk_id: ...], [chunk: ...]
+  const citationPattern = /chunk_id(?::|=|\s+is\s+|:\s*)["']?([a-zA-Z0-9_-]+)["']?/gi;
+  let match;
+  while ((match = citationPattern.exec(trimmedMarkdown)) !== null) {
+    const citedId = match[1].toLowerCase();
     if (validChunkIds.has(citedId)) {
-      validCitations.push(validChunkIds.get(citedId));
+      const passage = validChunkIds.get(citedId);
+      const cId = passage.chunk_id.toString().toLowerCase();
+      foundChunkIds.add(cId);
+      if (!seenValidChunkIds.has(cId)) {
+        seenValidChunkIds.add(cId);
+        validCitations.push(passage);
+      }
     } else {
       invalidCitationIds.push(citedId);
     }
@@ -156,7 +302,7 @@ export function validateEssay({
 
   if (validCitations.length === 0 && verifiedEvidence.length > 0) {
     warnings.push(
-      "No explicit chunk citations detected in essay body. While ideas may be paraphrased, explicit [chunk_id: <id>] references ensure verifiable attribution."
+      "No explicit chunk citations detected in essay body. While ideas may be paraphrased, explicit [S1] or [chunk_id: <id>] references ensure verifiable attribution."
     );
   }
 

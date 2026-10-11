@@ -1010,6 +1010,87 @@ button, input, textarea, select {
   color: var(--text-primary);
 }
 
+/* Chat Message Markdown Typography */
+.message-bubble .chat-message-markdown {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.message-bubble .chat-message-markdown > :first-child {
+  margin-top: 0 !important;
+}
+
+.message-bubble .chat-message-markdown > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.message-bubble .chat-message-markdown .md-heading {
+  color: var(--text-primary);
+  line-height: 1.35;
+}
+
+.message-bubble .chat-message-markdown .md-heading.md-h1 {
+  font-size: 1.25rem;
+  margin-top: 0.85rem;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.25rem;
+}
+
+.message-bubble .chat-message-markdown .md-heading.md-h2 {
+  font-size: 1.15rem;
+  margin-top: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.message-bubble .chat-message-markdown .md-heading.md-h3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  color: var(--accent-orange-burnt);
+}
+
+.message-bubble .chat-message-markdown .md-heading.md-h4 {
+  font-size: 0.94rem;
+  margin-top: 0.6rem;
+  margin-bottom: 0.25rem;
+}
+
+.message-bubble .chat-message-markdown .md-paragraph {
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+  color: inherit;
+  line-height: 1.6;
+}
+
+.message-bubble .chat-message-markdown .md-ul,
+.message-bubble .chat-message-markdown .md-ol {
+  margin: 0.4rem 0 0.65rem;
+  padding-left: 1.35rem;
+  color: inherit;
+}
+
+.message-bubble .chat-message-markdown .md-li {
+  margin-bottom: 0.3rem;
+  line-height: 1.55;
+  color: inherit;
+}
+
+.message-bubble .chat-message-markdown .md-blockquote {
+  margin: 0.6rem 0 0.75rem;
+  padding: 0.5rem 0.85rem;
+  background-color: rgba(0, 0, 0, 0.15);
+  border-left: 3px solid var(--accent-gold);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-style: italic;
+  color: inherit;
+}
+
+.message-bubble .chat-message-markdown .md-code-block-container {
+  margin: 0.75rem 0;
+}
+
 /* Thinking Indicator */
 .thinking-bubble {
   display: flex;

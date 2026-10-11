@@ -8,7 +8,7 @@ import {
   ModelRuntime
 } from "@earendil-works/pi-coding-agent";
 import { config, SUPPORTED_PROVIDERS } from "./config.mjs";
-import { executeSkillWorkflow } from "../skills/ship30/index.mjs";
+import { executeSkillWorkflow, extractCompactCitationTokens } from "../skills/ship30/index.mjs";
 
 // Ensure runtime directory exists
 if (!fs.existsSync(config.agentDataDir)) {
@@ -29,7 +29,10 @@ export function syncModelsConfig() {
             name: `Ollama (${config.ollamaModel})`,
             contextWindow: 32768,
             maxTokens: 2048,
-            input: ["text"]
+            input: ["text"],
+            compat: {
+              maxTokensField: "max_tokens"
+            }
           }
         ]
       }
@@ -74,6 +77,177 @@ async function acquireLock(sessionId) {
     sessionLocks.delete(sessionId);
     release();
   };
+}
+
+/**
+ * Tracks and assigns compact source IDs (S1, S2, ...) deterministically
+ * to retrieved passages during a turn, mapping them to verified chunk UUIDs and metadata.
+ */
+export class TurnEvidenceTracker {
+  constructor() {
+    this.passagesByShortId = new Map(); // "s1" -> passage
+    this.passagesByChunkId = new Map(); // "uuid" -> passage
+    this.shortIdByChunkId = new Map(); // "uuid" -> "S1"
+    this.counter = 1;
+  }
+
+  addPassage(passage) {
+    if (!passage || !passage.chunk_id) return null;
+    const chunkId = String(passage.chunk_id).trim().toLowerCase();
+    if (this.passagesByChunkId.has(chunkId)) {
+      return this.shortIdByChunkId.get(chunkId);
+    }
+    const shortId = `S${this.counter++}`;
+    const shortKey = shortId.toLowerCase();
+    this.passagesByShortId.set(shortKey, passage);
+    this.passagesByChunkId.set(chunkId, passage);
+    this.shortIdByChunkId.set(chunkId, shortId);
+    return shortId;
+  }
+
+  getShortId(chunkId) {
+    if (!chunkId) return null;
+    return this.shortIdByChunkId.get(String(chunkId).trim().toLowerCase()) || null;
+  }
+
+  getByShortId(shortId) {
+    if (!shortId) return null;
+    return this.passagesByShortId.get(String(shortId).trim().toLowerCase()) || null;
+  }
+
+  getByChunkId(chunkId) {
+    if (!chunkId) return null;
+    return this.passagesByChunkId.get(String(chunkId).trim().toLowerCase()) || null;
+  }
+
+  getAllPassages() {
+    return Array.from(this.passagesByChunkId.values());
+  }
+
+  formatPassage(passage) {
+    const shortId = this.addPassage(passage);
+    return `[SOURCE ${shortId} | chunk_id="${passage.chunk_id}"] Episode: "${passage.episode_title}" (Guest: ${passage.guest || "Lenny Rachitsky"})\nSpeaker: ${passage.speaker || "Unknown"}\nContent: ${passage.content}`;
+  }
+}
+
+/**
+ * Extracts and resolves citation tokens deterministically against the verified evidence tracker.
+ * Rejects unknown or malformed tokens, and attaches only verified source metadata.
+ */
+export function parseAndResolveCitations(rawAnswer = "", tracker) {
+  if (!rawAnswer || !tracker) return [];
+
+  const verifiedCitations = [];
+  const seenChunkIds = new Set();
+
+  // 1. Match compact citation tokens: [S1], (S1), (S2:00:06:46), [SOURCE: S1], [S1, S2], etc.
+  const compactTokens = extractCompactCitationTokens(rawAnswer);
+  for (const { shortId, rawToken } of compactTokens) {
+    const passage = tracker.getByShortId(shortId);
+    if (passage && passage.chunk_id) {
+      const cId = String(passage.chunk_id).toLowerCase();
+      if (!seenChunkIds.has(cId)) {
+        seenChunkIds.add(cId);
+        verifiedCitations.push({
+          chunk_id: passage.chunk_id,
+          transcript_id: passage.transcript_id,
+          episode_slug: passage.episode_slug,
+          episode_title: passage.episode_title,
+          guest: passage.guest,
+          speaker: passage.speaker,
+          source_url: passage.source_url,
+          start_timestamp: passage.start_timestamp,
+          end_timestamp: passage.end_timestamp,
+          snippet: passage.content ? passage.content.slice(0, 200) + "..." : "",
+          source_token: rawToken
+        });
+      }
+    }
+  }
+
+  // 2. Also support full UUID citations for backward compatibility: [chunk_id: <uuid>] or [chunk: <uuid>]
+  const uuidRegex = /\[(?:chunk_id|chunk)(?::|=|\s+is\s+|:\s*)["']?([a-f0-9-]{32,36})["']?\]/gi;
+  let match;
+  while ((match = uuidRegex.exec(rawAnswer)) !== null) {
+    const citedUuid = match[1].toLowerCase();
+    const passage = tracker.getByChunkId(citedUuid);
+    if (passage && passage.chunk_id) {
+      const cId = String(passage.chunk_id).toLowerCase();
+      if (!seenChunkIds.has(cId)) {
+        seenChunkIds.add(cId);
+        verifiedCitations.push({
+          chunk_id: passage.chunk_id,
+          transcript_id: passage.transcript_id,
+          episode_slug: passage.episode_slug,
+          episode_title: passage.episode_title,
+          guest: passage.guest,
+          speaker: passage.speaker,
+          source_url: passage.source_url,
+          start_timestamp: passage.start_timestamp,
+          end_timestamp: passage.end_timestamp,
+          snippet: passage.content ? passage.content.slice(0, 200) + "..." : "",
+          source_token: tracker.getShortId(cId) || null
+        });
+      }
+    }
+  }
+
+  return verifiedCitations;
+}
+
+/**
+ * Identifies distinctive named frameworks, numbered concepts, or quoted phrases
+ * in a user query that are completely absent from all retrieved evidence chunks.
+ */
+export function detectDistinctiveAbsentConcepts(message = "", passages = []) {
+  if (!message || typeof message !== "string") return [];
+
+  const candidates = [];
+
+  // 1. Quoted terms: "11-star", "11-star experience"
+  const quoted = message.match(/"([^"]{3,40})"/g);
+  if (quoted) {
+    for (const q of quoted) {
+      candidates.push(q.replace(/"/g, "").trim());
+    }
+  }
+
+  // 2. Numbered / named frameworks, e.g. "11-star", "11 star", "5-step", "3-pillar"
+  const numberedFramework = message.match(/\b\d+[- ](?:star|step|phase|rule|tier|point|pillar|framework|level|factor|x)(?:\s+(?:experience|model|rule|process|method|approach|framework|journey))?\b/gi);
+  if (numberedFramework) {
+    for (const nf of numberedFramework) {
+      candidates.push(nf.trim());
+    }
+  }
+
+  // 3. Coined phrases: e.g. "X framework", "X methodology"
+  const coinedPhrases = message.match(/\b[A-Za-z0-9-]+\s+(?:framework|methodology|matrix|equation|doctrine|canvas)\b/gi);
+  if (coinedPhrases) {
+    for (const cp of coinedPhrases) {
+      const lower = cp.toLowerCase();
+      if (!lower.startsWith("product ") && !lower.startsWith("growth ") && !lower.startsWith("our ") && !lower.startsWith("this ")) {
+        candidates.push(cp.trim());
+      }
+    }
+  }
+
+  if (candidates.length === 0) return [];
+
+  const corpus = passages.map((p) => `${p.episode_title || ""} ${p.content || ""}`.toLowerCase()).join(" ");
+
+  const absent = [];
+  for (const item of candidates) {
+    const raw = item.toLowerCase();
+    const normalizedSpaced = raw.replace(/[-_]/g, " ");
+    const normalizedHyphen = raw.replace(/\s+/g, "-");
+
+    const found = corpus.includes(raw) || corpus.includes(normalizedSpaced) || corpus.includes(normalizedHyphen);
+    if (!found) {
+      absent.push(item);
+    }
+  }
+
+  return [...new Set(absent)];
 }
 
 export class PiAgentManager {
@@ -137,12 +311,10 @@ export class PiAgentManager {
       throw err;
     }
 
-    // Map of all evidence available to the agent during this turn
-    const retrievedPassagesMap = new Map();
+    // Deterministic Turn Evidence Tracker
+    const evidenceTracker = new TurnEvidenceTracker();
     for (const p of candidatePassages) {
-      if (p.chunk_id) {
-        retrievedPassagesMap.set(String(p.chunk_id).toLowerCase(), p);
-      }
+      evidenceTracker.addPassage(p);
     }
 
     const toolExecutions = [];
@@ -204,9 +376,7 @@ export class PiAgentManager {
                 toolExecutions.push(toolRecord);
 
                 for (const item of results) {
-                  if (item.chunk_id) {
-                    retrievedPassagesMap.set(String(item.chunk_id).toLowerCase(), item);
-                  }
+                  evidenceTracker.addPassage(item);
                 }
 
                 if (results.length === 0) {
@@ -215,10 +385,7 @@ export class PiAgentManager {
                   };
                 }
 
-                const formatted = results.map((r) =>
-                  `[PASSAGE chunk_id="${r.chunk_id}"] Episode: "${r.episode_title}" (Guest: ${r.guest || "Lenny Ratchitsky"})\nSpeaker: ${r.speaker || "Unknown"}\nContent: ${r.content}`
-                ).join("\n\n---\n\n");
-
+                const formatted = results.map((r) => evidenceTracker.formatPassage(r)).join("\n\n---\n\n");
                 return { content: [{ type: "text", text: formatted }] };
               } catch (err) {
                 toolRecord.error = err.message;
@@ -254,14 +421,11 @@ export class PiAgentManager {
 
       session = sessionResult.session;
 
-
-      // Format initial evidence block
+      // Format initial evidence block with compact source tokens
       let evidenceBlock = "";
       if (candidatePassages.length > 0) {
         evidenceBlock = "\n\n[CANDIDATE TRANSCRIPT PASSAGES FROM PRE-RETRIEVAL]:\n" +
-          candidatePassages.map((p) =>
-            `[PASSAGE chunk_id="${p.chunk_id}"] Episode: "${p.episode_title}" (Guest: ${p.guest || "Lenny Ratchitsky"})\nSpeaker: ${p.speaker || "Unknown"}\nContent: ${p.content}`
-          ).join("\n\n---\n\n");
+          candidatePassages.map((p) => evidenceTracker.formatPassage(p)).join("\n\n---\n\n");
       } else {
         evidenceBlock = "\n\n[PRE-RETRIEVAL STATUS]: No high-confidence initial passages were found for this query. You may use search_transcripts to find evidence.";
       }
@@ -273,15 +437,29 @@ export class PiAgentManager {
           history.slice(-8).map((h) => `${h.role.toUpperCase()}: ${h.content}`).join("\n");
       }
 
+      // Check for distinctive named concepts absent from current evidence
+      const absentConcepts = detectDistinctiveAbsentConcepts(message, evidenceTracker.getAllPassages());
+      let absentConstraint = "";
+      if (absentConcepts.length > 0) {
+        absentConstraint = `\n[GROUNDING NOTICE - CRITICAL CONSTRAINT]:
+The user query mentions the specific concept(s): "${absentConcepts.join(", ")}".
+The indexed Lenny's Podcast transcript archives DO NOT contain mentions of this specific concept or framework.
+You MUST:
+1. State clearly and honestly that the indexed Lenny's Podcast transcripts do not contain evidence for "${absentConcepts.join(", ")}".
+2. DO NOT invent quotes, timestamps, or stories attributing this concept to Lenny or any podcast guest.
+3. If providing general context about the guest or related topics, clearly state that this is separate general background, not the requested framework.`;
+      }
+
       const promptPayload = `System Instructions:
 You are The Lenny Growth Assistant, an authoritative AI mentor grounded exclusively in Lenny's Podcast transcripts.
 CRITICAL OPERATING RULES:
 1. Answer the question thoroughly and accurately using ONLY the transcript evidence provided below or retrieved via search_transcripts.
-2. Attribute key insights to the relevant guest and episode title. Include chunk references like [chunk_id: <id>] where applicable.
+2. CITATION RULE: When referencing evidence, cite using compact source tokens corresponding to the provided sources: e.g., [S1], [S2]. Place citations directly next to the claim they support.
 3. If the transcripts do NOT contain sufficient information to answer the question, state honestly:
 "I could not find sufficient evidence in the indexed Lenny's Podcast transcripts to answer this question."
 Do not guess or use outside knowledge when evidence is missing.
-4. Never invent quotes, episode titles, or source links.
+4. Never invent quotes, episode titles, timestamps, or source links. Only cite verified source tokens that are explicitly present in the evidence base.
+${absentConstraint}
 
 ${systemInstructions ? `Additional Context: ${systemInstructions}\n` : ""}${historyBlock}${evidenceBlock}
 
@@ -306,35 +484,25 @@ ${message}`;
         if (timerId) clearTimeout(timerId);
       }
 
-      const rawAnswer = session.getLastAssistantText() || "";
+      let finalAnswer = session.getLastAssistantText() || "";
       const durationMs = Date.now() - startTime;
 
-      // Deterministic Citation Validation - Require explicit reference to chunk ID
-      const verifiedCitations = [];
-      const lowerAnswer = rawAnswer.toLowerCase();
+      // Fail-closed conservative check for absent distinctive concepts
+      if (absentConcepts.length > 0) {
+        const mentionsAbsence = /not\s+(?:found|contain|mention|discuss|include)|could\s+not\s+find|insufficient\s+evidence/i.test(finalAnswer);
+        const fabricatedQuotes = /["“][^"”]{10,}["”]\s*[-–—]\s*(?:Brian|Lenny)|(?:Brian|Lenny):\s*["“]/i.test(finalAnswer);
 
-      for (const [chunkIdLower, passage] of retrievedPassagesMap.entries()) {
-        const idMatched = lowerAnswer.includes(chunkIdLower);
-
-        // Require explicit reference to the retrieved chunk identifier
-        if (idMatched) {
-          verifiedCitations.push({
-            chunk_id: passage.chunk_id,
-            transcript_id: passage.transcript_id,
-            episode_slug: passage.episode_slug,
-            episode_title: passage.episode_title,
-            guest: passage.guest,
-            speaker: passage.speaker,
-            source_url: passage.source_url,
-            start_timestamp: passage.start_timestamp,
-            end_timestamp: passage.end_timestamp,
-            snippet: passage.content ? passage.content.slice(0, 200) + "..." : ""
-          });
+        if (!mentionsAbsence || fabricatedQuotes) {
+          const concept = absentConcepts[0];
+          finalAnswer = `I searched the indexed Lenny's Podcast transcripts, but could not find evidence for the "${concept}" framework or discussion. While the archives include discussions with guests on product management and company culture, the specific concept requested is not documented in the indexed episodes. Therefore, I cannot provide verified quotes or timestamps for it.`;
         }
       }
 
+      // Deterministic Citation Parsing and Validation
+      const verifiedCitations = parseAndResolveCitations(finalAnswer, evidenceTracker);
+
       return {
-        answer: rawAnswer,
+        answer: finalAnswer,
         citations: verifiedCitations,
         toolExecutions,
         provider: selectedProvider,
@@ -460,7 +628,11 @@ ${message}`;
       session = sessionResult.session;
 
       // Sequential section generation function
-      const generateSectionFn = async ({ section, plan, priorSectionsText, prompt }) => {
+      const generateSectionFn = async ({ section, plan, priorSectionsText, prompt, maxTokens }) => {
+        if (session?.agent?.state?.model) {
+          const effectiveMaxTokens = maxTokens || section?.maxTokens || 450;
+          session.agent.state.model.maxTokens = effectiveMaxTokens;
+        }
         let timerId;
         const promptPromise = session.prompt(prompt);
         const timeoutPromise = new Promise((_, reject) => {

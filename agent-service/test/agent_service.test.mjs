@@ -11,7 +11,13 @@ process.env.AGENT_INTERNAL_SECRET = process.env.AGENT_INTERNAL_SECRET || "test-a
 
 const { config, SUPPORTED_PROVIDERS } = await import("../src/config.mjs");
 const { createAgentServer } = await import("../src/server.mjs");
-const { syncModelsConfig, PiAgentManager } = await import("../src/pi_agent.mjs");
+const {
+  syncModelsConfig,
+  PiAgentManager,
+  TurnEvidenceTracker,
+  parseAndResolveCitations,
+  detectDistinctiveAbsentConcepts
+} = await import("../src/pi_agent.mjs");
 const {
   createAgentSession,
   SessionManager,
@@ -516,5 +522,244 @@ describe("Agent Service Isolated Tests", () => {
     assert.equal(body.data.generation_status, "success");
     assert.equal(body.data.citations.length, 1);
     assert.equal(body.data.citations[0].chunk_id, "test-chunk-123");
+  });
+});
+
+describe("Chat Grounding, Compact Citations & Conservative Evidence", () => {
+  const samplePassages = [
+    {
+      chunk_id: "5d12a34b-871c-4b36-9b55-d14a72d3f110",
+      transcript_id: "t-001",
+      episode_slug: "brian-chesky-airbnb",
+      episode_title: "Brian Chesky on Designing Culture",
+      guest: "Brian Chesky",
+      speaker: "Brian Chesky",
+      source_url: "https://youtube.com/watch?v=chesky",
+      start_timestamp: "00:15:30",
+      end_timestamp: "00:16:45",
+      content: "When you build a product, obsess over the details and cultivate direct relationships with early users."
+    },
+    {
+      chunk_id: "e481b92c-63df-49aa-a182-901bf9e8a711",
+      transcript_id: "t-002",
+      episode_slug: "elena-verna-plg",
+      episode_title: "Elena Verna on B2B Growth Loops",
+      guest: "Elena Verna",
+      speaker: "Elena Verna",
+      source_url: "https://youtube.com/watch?v=verna",
+      start_timestamp: "00:08:12",
+      end_timestamp: "00:09:40",
+      content: "Product-led growth is an engine for user acquisition and retention, not merely self-serve checkout."
+    }
+  ];
+
+  test("TurnEvidenceTracker assigns compact IDs [S1], [S2] deterministically and maps to chunk UUIDs", () => {
+    const tracker = new TurnEvidenceTracker();
+    const id1 = tracker.addPassage(samplePassages[0]);
+    const id2 = tracker.addPassage(samplePassages[1]);
+
+    assert.equal(id1, "S1");
+    assert.equal(id2, "S2");
+
+    // Idempotent re-add returns same short ID
+    const reAddId1 = tracker.addPassage(samplePassages[0]);
+    assert.equal(reAddId1, "S1");
+
+    // Bidirectional lookups
+    assert.equal(tracker.getShortId(samplePassages[0].chunk_id), "S1");
+    assert.equal(tracker.getShortId(samplePassages[1].chunk_id), "S2");
+
+    assert.equal(tracker.getByShortId("s1").chunk_id, samplePassages[0].chunk_id);
+    assert.equal(tracker.getByShortId("S2").guest, "Elena Verna");
+    assert.equal(tracker.getByShortId("s99"), null);
+
+    // Formatted passage includes compact ID and chunk UUID
+    const formatted = tracker.formatPassage(samplePassages[0]);
+    assert.ok(formatted.includes("[SOURCE S1 | chunk_id=\"5d12a34b-871c-4b36-9b55-d14a72d3f110\"]"));
+    assert.ok(formatted.includes("Brian Chesky on Designing Culture"));
+  });
+
+  test("parseAndResolveCitations resolves compact tokens [S1], [S2] to verified metadata", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+    tracker.addPassage(samplePassages[1]);
+
+    const answer = "Brian Chesky advocates obsessing over early user details [S1]. Meanwhile, growth loops power retention [S2].";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+    assert.equal(citations[0].guest, "Brian Chesky");
+    assert.equal(citations[0].source_token, "S1");
+    assert.equal(citations[1].chunk_id, samplePassages[1].chunk_id);
+    assert.equal(citations[1].guest, "Elena Verna");
+    assert.equal(citations[1].source_token, "S2");
+  });
+
+  test("parseAndResolveCitations rejects unknown tokens like [S99] and attaches nothing", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+
+    const answer = "A fabricated claim citing nonexistent evidence [S99] and another [S0].";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 0);
+  });
+
+  test("parseAndResolveCitations does NOT auto-attach unreferenced passages", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+    tracker.addPassage(samplePassages[1]);
+
+    const answer = "This is a general reply that does not cite any source tokens at all.";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 0);
+  });
+
+  test("parseAndResolveCitations maintains backwards compatibility with full chunk UUID tags", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+
+    const answer = `Verified claim citing [chunk_id: ${samplePassages[0].chunk_id}].`;
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 1);
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+  });
+
+  test("parseAndResolveCitations resolves parenthesized compact references (S1) and (s1)", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+    tracker.addPassage(samplePassages[1]);
+
+    const answer = "Brian Chesky advocates obsessing over early details (S1). Elena discusses growth (s2).";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+    assert.equal(citations[0].guest, "Brian Chesky");
+    assert.equal(citations[0].source_token, "S1");
+    assert.equal(citations[1].chunk_id, samplePassages[1].chunk_id);
+    assert.equal(citations[1].source_token, "S2");
+  });
+
+  test("parseAndResolveCitations resolves parenthesized references with timestamps (S2:00:06:46)", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]); // S1
+    tracker.addPassage(samplePassages[1]); // S2
+
+    const answer = "Brian Chesky explained Airbnb leadership (S1:00:06:46). Meanwhile Elena added retention principles (S2:00:05:56).";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].source_token, "S1");
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+    assert.equal(citations[1].source_token, "S2");
+    assert.equal(citations[1].chunk_id, samplePassages[1].chunk_id);
+  });
+
+  test("parseAndResolveCitations resolves grouped citations in parens (S1:00:06:46, S2:00:05:56) and brackets [S1, S2]", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+    tracker.addPassage(samplePassages[1]);
+
+    const answer = "Synthesized management principles (S1:00:06:46, S2:00:05:56). Further details [S1, S2].";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+    assert.equal(citations[1].chunk_id, samplePassages[1].chunk_id);
+  });
+
+  test("parseAndResolveCitations resolves bracketed variants [SOURCE S1] and [SOURCE: S1]", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+    tracker.addPassage(samplePassages[1]);
+
+    const answer = "Details from [SOURCE S1] and [SOURCE: S2].";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 2);
+    assert.equal(citations[0].source_token, "S1");
+    assert.equal(citations[1].source_token, "S2");
+  });
+
+  test("parseAndResolveCitations rejects unknown parenthesized tokens like (S99) and (S99:00:01:00)", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+
+    const answer = "Fabricated claim (S99) and another with fake timestamp (S99:00:06:46).";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 0);
+  });
+
+  test("parseAndResolveCitations deduplicates repeated citations across different syntaxes", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]); // S1
+
+    const answer = "First mention [S1]. Second mention (S1:00:06:46). Third mention [SOURCE: S1].";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 1);
+    assert.equal(citations[0].chunk_id, samplePassages[0].chunk_id);
+  });
+
+  test("parseAndResolveCitations uses trusted source metadata and overrides model timestamp", () => {
+    const tracker = new TurnEvidenceTracker();
+    const mockPassage = {
+      chunk_id: "test-trusted-uuid-1234",
+      transcript_id: "transcript-abc",
+      episode_slug: "brian-chesky-airbnb",
+      episode_title: "Brian Chesky on Product",
+      guest: "Brian Chesky",
+      speaker: "Brian Chesky",
+      source_url: "https://youtube.com/watch?v=123",
+      start_timestamp: "00:04:15",
+      end_timestamp: "00:05:30",
+      content: "Real transcript content about founder-led product decisions."
+    };
+    tracker.addPassage(mockPassage);
+
+    // The model hallucinates or writes a different timestamp in the paren: 00:09:99
+    const answer = "Brian Chesky advocated this principle (S1:00:09:99).";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 1);
+    assert.equal(citations[0].start_timestamp, "00:04:15");
+    assert.equal(citations[0].end_timestamp, "00:05:30");
+    assert.equal(citations[0].source_url, "https://youtube.com/watch?v=123");
+  });
+
+  test("parseAndResolveCitations rejects loose occurrences of S1 in ordinary prose as citations", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+
+    const answer = "The S1 satellite was launched and model S1 is fast, but we don't cite here.";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 0);
+  });
+
+  test("parseAndResolveCitations rejects parenthesized ordinary prose mentioning S1", () => {
+    const tracker = new TurnEvidenceTracker();
+    tracker.addPassage(samplePassages[0]);
+
+    const answer = "Brian noted this in 2021 (which was S1's best financial quarter for product).";
+    const citations = parseAndResolveCitations(answer, tracker);
+
+    assert.equal(citations.length, 0);
+  });
+
+  test("detectDistinctiveAbsentConcepts identifies '11-star experience' when missing from retrieved chunks", () => {
+    const absent = detectDistinctiveAbsentConcepts("Tell me about the 11-star experience framework from Brian Chesky", samplePassages);
+    assert.ok(absent.length >= 1);
+    assert.ok(absent.some((c) => c.toLowerCase().includes("11-star")));
+  });
+
+  test("detectDistinctiveAbsentConcepts does NOT flag concepts that are present in retrieved chunks", () => {
+    const absent = detectDistinctiveAbsentConcepts("Tell me about growth loops and retention", samplePassages);
+    assert.equal(absent.length, 0);
   });
 });

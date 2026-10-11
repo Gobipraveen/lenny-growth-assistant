@@ -3,6 +3,8 @@
  * Synthesizes strict editorial constraints, formatting cadence, and verified evidence blocks.
  */
 
+import { countWords } from "./validator.mjs";
+
 /**
  * Builds the comprehensive generation prompt for drafting a full ~1,250-word Ship 30 essay.
  * @param {object} plan - Output of createEssayPlan
@@ -28,8 +30,8 @@ export function buildGenerationPrompt(plan) {
   if (allEvidence.length > 0) {
     evidenceBlock = allEvidence
       .map(
-        (p) =>
-          `[VERIFIED PASSAGE chunk_id="${p.chunk_id}"]\n` +
+        (p, idx) =>
+          `[VERIFIED PASSAGE chunk_id="${p.chunk_id}"] [SOURCE S${idx + 1}]\n` +
           `Episode: "${p.episode_title}"\n` +
           `Guest / Speaker: ${p.guest || p.speaker || "Unknown"}\n` +
           `Timestamps: ${p.start_timestamp || "N/A"} - ${p.end_timestamp || "N/A"}\n` +
@@ -66,8 +68,8 @@ MANDATORY SHIP 30 EDITORIAL RULES:
 5. STRICT GROUNDING & CREDIBILITY:
    - Ground all insights in the transcript passages provided below.
    - Attribute quotes and ideas to the correct guest (${guests.join(", ") || "Lenny's Podcast guest"}).
-   - When citing evidence, include the explicit chunk tag in the text, e.g.: [chunk_id: <chunk_id>].
-   - NEVER invent chunk IDs, timestamps, or URLs not present in the verified evidence.
+   - When citing evidence, cite using compact tokens like [S1], [S2] (or [chunk_id: <chunk_id>]).
+   - NEVER invent chunk IDs, citation tokens, timestamps, or URLs not present in the verified evidence.
 6. CONCRETE ACTIONABLE TAKEAWAY (Section 5):
    - Conclude with an explicit actionable framework, diagnostic checklist, or decision rule under a heading like "## The Actionable Framework" or "## The Checklist".
    - Give the reader something they can implement in their company tomorrow morning.
@@ -84,7 +86,7 @@ VERIFIED TRANSCRIPT EVIDENCE BASE:
 ${evidenceBlock}
 
 OUTPUT FORMAT:
-Return ONLY the complete essay in clean Markdown. Do not include introductory conversational meta-commentary like "Here is your essay:".`;
+Return ONLY the complete essay in clean Markdown. Do NOT wrap the entire output in an outer \`\`\`markdown code block. Do not include introductory conversational meta-commentary like "Here is your essay:".`;
 }
 
 /**
@@ -96,19 +98,70 @@ Return ONLY the complete essay in clean Markdown. Do not include introductory co
  * @returns {string} Prompt for drafting this specific section
  */
 export function buildSectionPrompt(section, plan, priorSectionsText = "") {
+  const validTokens = (section.assignedEvidence || []).map((p, idx) => {
+    const globalIdx = (plan.allEvidence || []).findIndex((e) => e.chunk_id === p.chunk_id);
+    return globalIdx >= 0 ? `S${globalIdx + 1}` : `S${idx + 1}`;
+  });
+
   const assignedEvidenceText = (section.assignedEvidence || [])
-    .map((p) => `[chunk_id="${p.chunk_id}"] (Guest: ${p.guest}): "${p.content}"`)
+    .map((p, idx) => {
+      const globalIdx = (plan.allEvidence || []).findIndex((e) => e.chunk_id === p.chunk_id);
+      const token = globalIdx >= 0 ? `S${globalIdx + 1}` : `S${idx + 1}`;
+      return `[SOURCE ${token} | chunk_id="${p.chunk_id}"] (Guest: ${p.guest || p.speaker || "Lenny's Guest"}):\n"${p.content}"`;
+    })
     .join("\n\n");
 
-  return `Draft ${section.id} ("${section.title}") for a Ship 30 for 30 essay on "${plan.topic}".
-Target length: exactly ~${section.targetWords} words.
-Cadence rhythm: ${section.rhythm}.
-Purpose: ${section.purpose}
-Specific Section Rules:
+  const citationNotice = validTokens.length > 0
+    ? `Assigned valid source tokens: [${validTokens.join(", ")}]. When citing, use compact tokens like [${validTokens[0]}] or (${validTokens[0]}). NEVER invent unassigned tokens.`
+    : `This section does not introduce direct evidence citations. Do not invent citation tokens.`;
+
+  const minWords = section.minWords || Math.round(section.targetWords * 0.75);
+  const maxWords = section.maxWords || Math.round(section.targetWords * 1.25);
+
+  return `Draft Section "${section.title}" (${section.id}) for a Ship 30 for 30 essay on "${plan.topic}".
+
+SECTION SPECIFICATIONS:
+- Target word count: ~${section.targetWords} words (STRICT BOUNDS: ${minWords} to ${maxWords} words).
+- Rhythm cadence: ${section.rhythm}.
+- Section purpose: ${section.purpose}
+- Specific Section Rules:
 ${section.rules.map((r) => `- ${r}`).join("\n")}
 
-${assignedEvidenceText ? `Assigned Evidence Chunks to cite:\n${assignedEvidenceText}\n` : ""}
-${priorSectionsText ? `Prior Context:\n${priorSectionsText.slice(-600)}\n` : ""}
+${assignedEvidenceText ? `VERIFIED EVIDENCE CHUNKS ASSIGNED TO THIS SECTION:\n${assignedEvidenceText}\n` : ""}
+${priorSectionsText ? `PRIOR CONTEXT (for continuity only):\n${priorSectionsText.slice(-600)}\n` : ""}
 
-Draft ONLY the markdown content for this section.`;
+CRITICAL GENERATION CONSTRAINTS (MANDATORY):
+1. LENGTH CONSTRAINT: Write strictly between ${minWords} and ${maxWords} words (target: ~${section.targetWords} words). Do NOT exceed ${maxWords} words.
+2. Produce ONLY the requested section prose. Do NOT write an entire multi-section essay.
+3. Do NOT repeat prior sections, repeat prior paragraphs, or repeat concluding quotes from earlier sections.
+4. Do NOT repeat supplied transcript evidence verbatim. Synthesize core principles.
+5. Do NOT include introductory conversational meta-commentary (e.g., "Sure, here is the draft..."). Begin immediately with the section content.
+6. Do NOT restate prompts, section titles, or editorial instructions.
+7. Do NOT wrap prose in outer \`\`\`markdown code fences or backticks.
+8. CITATION INTEGRITY: ${citationNotice}
+9. Stop immediately once the allotted section content is complete.`;
+}
+
+/**
+ * Builds a prompt for bounded single-section compression when an overlong section is detected.
+ * @param {object} section - Section definition
+ * @param {string} draftText - The overlong draft text
+ * @param {number} targetWords - Target word count for compression
+ * @returns {string} Compression prompt
+ */
+export function buildCompressionPrompt(section, draftText, targetWords) {
+  const minWords = section.minWords || Math.round(targetWords * 0.75);
+  const maxWords = section.maxWords || Math.round(targetWords * 1.15);
+
+  return `The following draft for Section "${section.title}" is ${countWords(draftText)} words, which exceeds its allocated budget.
+Rewrite and compress this section to strictly ~${targetWords} words (acceptable range: ${minWords} to ${maxWords} words).
+
+DRAFT TO COMPRESS:
+${draftText}
+
+COMPRESSION RULES:
+1. Preserve all core arguments, structure, and all verified citation tokens (e.g. [S1], (S1), (S2:00:06:46)). Do NOT delete or alter citations.
+2. Cut filler, conversational preamble, repeated quotes, and verbose elaboration.
+3. Output ONLY the compressed Markdown prose for this section. No outer code fences, no introductory meta-commentary.
+4. Stop immediately once the concise point is made.`;
 }

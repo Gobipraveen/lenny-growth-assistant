@@ -5,8 +5,8 @@
 
 import { validateSkillInput, normalizeEvidence, ESSAY_DEFAULTS } from "./contracts.mjs";
 import { createEssayPlan } from "./planner.mjs";
-import { buildGenerationPrompt, buildSectionPrompt } from "./prompt_builder.mjs";
-import { validateEssay, countWords } from "./validator.mjs";
+import { buildGenerationPrompt, buildSectionPrompt, buildCompressionPrompt } from "./prompt_builder.mjs";
+import { validateEssay, countWords, stripOuterMarkdownFence, extractCompactCitationTokens } from "./validator.mjs";
 
 export {
   validateSkillInput,
@@ -14,16 +14,20 @@ export {
   createEssayPlan,
   buildGenerationPrompt,
   buildSectionPrompt,
+  buildCompressionPrompt,
   validateEssay,
   countWords,
+  stripOuterMarkdownFence,
+  extractCompactCitationTokens,
   assembleEssaySections,
   ESSAY_DEFAULTS,
 };
 
 /**
  * Assembles 5 sequentially generated sections into a cohesive Ship 30 Markdown essay.
- * Guarantees exactly one top-level H1 headline, properly structured H2 section headers,
- * and an explicit actionable takeaway section.
+ * Safely strips outer markdown fences from section drafts, guarantees exactly one
+ * top-level H1 headline, properly structured H2 section headers, and an explicit
+ * actionable takeaway section.
  * @param {object} params
  * @param {object} params.plan - Narrative plan from createEssayPlan
  * @param {Array<{ section: object, text: string }>} params.sectionTexts - Ordered section outputs
@@ -34,7 +38,7 @@ function assembleEssaySections({ plan, sectionTexts }) {
   const headline = plan.headline.startsWith("# ") ? plan.headline : `# ${plan.headline}`;
 
   sectionTexts.forEach(({ section, text }, idx) => {
-    let cleanText = (text || "").trim();
+    let cleanText = stripOuterMarkdownFence(text || "");
 
     if (idx === 0) {
       // First section: ensure H1 is present
@@ -152,21 +156,81 @@ export async function executeSkillWorkflow({ input, generateFn, generateSectionF
       let accumulatedText = "";
       for (const section of plan.sections) {
         const sectionPrompt = buildSectionPrompt(section, plan, accumulatedText);
-        const sectionText = await generateSectionFn({
+        let sectionText = await generateSectionFn({
           section,
           plan,
           priorSectionsText: accumulatedText,
           prompt: sectionPrompt,
+          maxTokens: section.maxTokens,
         });
-        sectionTexts.push({ section, text: sectionText });
-        accumulatedText += `\n\n${sectionText}`.trim();
+
+        // Deterministic Section-Length Measurement
+        let cleanSection = stripOuterMarkdownFence(sectionText || "");
+        let sectionWords = countWords(cleanSection);
+        const maxSectionWords = section.maxWords || Math.round(section.targetWords * 1.25);
+
+        // Detect overlong section
+        if (sectionWords > maxSectionWords) {
+          // Bounded revision: at most ONE compression attempt
+          const compressionPrompt = buildCompressionPrompt(section, cleanSection, section.targetWords);
+          const compressedText = await generateSectionFn({
+            section,
+            plan,
+            priorSectionsText: accumulatedText,
+            prompt: compressionPrompt,
+            maxTokens: section.maxTokens,
+          });
+
+          const cleanCompressed = stripOuterMarkdownFence(compressedText || "");
+          const compressedWords = countWords(cleanCompressed);
+
+          // Preserve shorter valid version only if it remains structurally correct and citations remain valid
+          if (compressedWords < sectionWords && compressedWords > 0) {
+            const compressedCitations = extractCompactCitationTokens(cleanCompressed);
+            const validShortIds = new Set(normalizedEvidence.map((_, idx) => `s${idx + 1}`));
+            const hasInvalidCitation = compressedCitations.some((c) => !validShortIds.has(c.shortId));
+
+            if (!hasInvalidCitation) {
+              sectionText = cleanCompressed;
+              cleanSection = cleanCompressed;
+              sectionWords = compressedWords;
+            }
+          }
+
+          // If revision fails to prevent severe overrun, report truthful validation failure
+          const severeOverrunLimit = Math.max(500, Math.round(section.targetWords * 1.8));
+          if (sectionWords > severeOverrunLimit) {
+            return {
+              title: plan.headline.replace(/^#\s+/, ""),
+              markdown: assembleEssaySections({ plan, sectionTexts: [...sectionTexts, { section, text: cleanSection }] }),
+              word_count: sectionWords,
+              citations: [],
+              evidence_chunk_ids: normalizedEvidence.map((e) => e.chunk_id),
+              validation_results: {
+                isValid: false,
+                wordCountValid: false,
+                headingsValid: false,
+                citationsValid: false,
+                takeawayValid: false,
+                errors: [
+                  `Section "${section.title}" exceeded length budget (${sectionWords} words; maximum allowed is ${maxSectionWords} words). Severe overrun detected.`,
+                ],
+                warnings: [],
+              },
+              generation_status: "section_word_count_exceeded",
+            };
+          }
+        }
+
+        sectionTexts.push({ section, text: cleanSection });
+        accumulatedText += `\n\n${cleanSection}`.trim();
       }
       generatedMarkdown = assembleEssaySections({ plan, sectionTexts });
     } else if (typeof generateFn === "function") {
       generatedMarkdown = await generateFn(prompt);
     }
   } catch (genErr) {
-    if (genErr.code === "INFERENCE_TIMEOUT" || genErr.statusCode === 504) {
+    if (genErr.code === "INFERENCE_TIMEOUT" || genErr.name === "TimeoutError" || genErr.statusCode === 504) {
       throw genErr;
     }
     return {

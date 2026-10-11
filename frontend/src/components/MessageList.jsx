@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Citations } from './Citations.jsx';
-import { FormattedContent } from './FormattedContent.jsx';
+import { MarkdownRenderer } from './MarkdownRenderer.jsx';
 
 const SUGGESTIONS = [
   'How did Airbnb find its first 1,000 guests and hosts?',
@@ -94,7 +94,7 @@ export function MessageList({
               </div>
 
               <div className={`message-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'}`}>
-                <FormattedContent text={msg.content} />
+                <MarkdownRenderer markdown={msg.content} className="chat-message-markdown" emptyFallback={null} />
               </div>
 
               {!isUser && citations.length > 0 && (
