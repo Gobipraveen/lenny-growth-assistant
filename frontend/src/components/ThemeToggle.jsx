@@ -1,8 +1,9 @@
 import React from 'react';
+import { Sun, Moon } from 'lucide-react';
 
 /**
  * Accessible Theme Toggle Button (Dark / Light).
- * Displays golden/sunset neutral styling with smooth SVG icon transitions.
+ * Uses Lucide outline icons with smooth transitions.
  */
 export function ThemeToggle({ theme = 'dark', onToggleTheme, className = '' }) {
   const isDark = theme === 'dark';
@@ -16,7 +17,7 @@ export function ThemeToggle({ theme = 'dark', onToggleTheme, className = '' }) {
       title={`Switch to ${isDark ? 'Light' : 'Dark'} Theme (Current: ${isDark ? 'Dark' : 'Light'})`}
     >
       <span className="theme-toggle-icon" aria-hidden="true">
-        {isDark ? '☀️' : '🌙'}
+        {isDark ? <Sun size={16} /> : <Moon size={16} />}
       </span>
       <span className="theme-toggle-label">
         {isDark ? 'Light' : 'Dark'}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { ArrowUp, LoaderCircle } from 'lucide-react';
 
 /**
  * Message input composer with multi-line support, keyboard shortcuts, and submit guards.
@@ -83,9 +84,9 @@ export function Composer({
             aria-label="Send message"
           >
             {isSubmitting ? (
-              <span className="send-spinner" aria-hidden="true">⏳</span>
+              <LoaderCircle size={16} className="spin-slow" aria-hidden="true" />
             ) : (
-              <span className="send-icon" aria-hidden="true">➤</span>
+              <ArrowUp size={16} aria-hidden="true" />
             )}
             <span>{isSubmitting ? 'Sending...' : 'Send'}</span>
           </button>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle, Info } from 'lucide-react';
 
 /**
  * Provider and model selection component.
@@ -58,14 +59,14 @@ export function ProviderSelector({
 
       {!isAgentOnline && (
         <div className="agent-warning-banner" role="alert">
-          <span className="warning-icon" aria-hidden="true">⚠️</span>
+          <AlertTriangle size={14} aria-hidden="true" className="warning-icon" />
           <span>Node.js agent bridge is offline (expected on port 8001). Chat turns will fail until started.</span>
         </div>
       )}
 
       {selectedProvider === 'anthropic' && !currentProviderInfo.available && (
         <div className="provider-notice" role="note">
-          <span aria-hidden="true">ℹ️</span>
+          <Info size={14} aria-hidden="true" />
           <span>
             Anthropic provider selected, but ANTHROPIC_API_KEY is not configured in root .env. Local Ollama is recommended.
           </span>

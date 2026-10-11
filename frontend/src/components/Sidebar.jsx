@@ -1,17 +1,29 @@
 import React from 'react';
+import {
+  Sparkles,
+  Plus,
+  MessageCircle,
+  FileText,
+  FilePenLine,
+  Code2,
+  Database,
+  PanelLeftClose,
+  X,
+  LoaderCircle,
+} from 'lucide-react';
 import { formatSessionDate, deriveSessionTitle } from '../utils/formatters.js';
 import { ThemeToggle } from './ThemeToggle.jsx';
 
 export { deriveSessionTitle };
 
 /**
- * Sidebar component (Left Panel) with Retro Sunset Neutral aesthetics:
- * - Application branding
+ * Sidebar component (Left Panel) with Premium Minimal AI Workspace styling:
+ * - Minimal branding & collapse
  * - New Chat action
- * - Session-scoped Artifacts & Ship 30 essays list
- * - Navigation entries (Conversations, Artifacts, Knowledge Base)
- * - Collapsible navigation
- * - Theme toggle control
+ * - Quick nav: Artifacts, Knowledge Base
+ * - Session Artifacts & Ship 30 essays
+ * - Recent conversations plain-text list
+ * - Bottom theme switcher
  */
 export function Sidebar({
   sessions = [],
@@ -48,10 +60,11 @@ export function Sidebar({
       {/* Brand & Desktop Collapse Bar */}
       <div className="sidebar-brand-box">
         <div className="sidebar-brand-logo-row">
-          <span className="sidebar-brand-icon" aria-hidden="true">🚀</span>
+          <span className="sidebar-brand-icon" aria-hidden="true">
+            <Sparkles size={16} />
+          </span>
           <div className="sidebar-brand-text">
             <span className="sidebar-brand-title">Lenny Assistant</span>
-            <span className="sidebar-brand-tag">Retro Sunset • v0.2.0</span>
           </div>
         </div>
 
@@ -63,18 +76,19 @@ export function Sidebar({
             aria-label="Collapse sidebar panel"
             title="Collapse sidebar"
           >
-            ◀
+            <PanelLeftClose size={16} aria-hidden="true" />
           </button>
         )}
 
-        {onCloseMobile && (
+        {isOpen && onCloseMobile && (
           <button
             type="button"
-            className="mobile-close-btn"
+            className="mobile-close-btn mobile-only"
             onClick={onCloseMobile}
             aria-label="Close conversation drawer"
+            title="Close drawer"
           >
-            ✕
+            <X size={16} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -88,7 +102,7 @@ export function Sidebar({
           disabled={isLoading}
           aria-label="Start new conversation"
         >
-          <span className="btn-icon" aria-hidden="true">+</span>
+          <Plus size={16} aria-hidden="true" className="btn-icon" />
           <span>New Conversation</span>
         </button>
       </div>
@@ -101,7 +115,7 @@ export function Sidebar({
           onClick={onToggleArtifactPanel}
           title="Toggle Artifact Viewer panel (Right panel)"
         >
-          <span className="nav-item-icon" aria-hidden="true">📜</span>
+          <FileText size={16} aria-hidden="true" className="nav-item-icon" />
           <span className="nav-item-label">Artifact Viewer</span>
           <span className="nav-item-pill">{isArtifactPanelOpen ? 'Open' : 'View'}</span>
         </button>
@@ -112,7 +126,7 @@ export function Sidebar({
           onClick={onOpenKnowledgeBase}
           title="View indexed podcast statistics & grounding info"
         >
-          <span className="nav-item-icon" aria-hidden="true">📚</span>
+          <Database size={16} aria-hidden="true" className="nav-item-icon" />
           <span className="nav-item-label">Knowledge Base</span>
           <span className="nav-item-pill">
             {knowledgeEpisodeCount !== null ? `${knowledgeEpisodeCount} eps` : 'Stats'}
@@ -134,7 +148,7 @@ export function Sidebar({
                 title="Create HTML or Markdown artifact"
                 aria-label="Create new artifact"
               >
-                +
+                <Plus size={14} aria-hidden="true" />
               </button>
             )}
             {onOpenCreateEssay && (
@@ -145,7 +159,7 @@ export function Sidebar({
                 title="Draft a Ship 30 essay"
                 aria-label="Draft new Ship 30 essay"
               >
-                ✍️
+                <FilePenLine size={14} aria-hidden="true" />
               </button>
             )}
           </div>
@@ -162,7 +176,7 @@ export function Sidebar({
                     className="btn-draft-first-essay"
                     onClick={onOpenCreateArtifact}
                   >
-                    + New Artifact
+                    <Plus size={12} aria-hidden="true" /> New Artifact
                   </button>
                 )}
                 {onOpenCreateEssay && (
@@ -171,7 +185,7 @@ export function Sidebar({
                     className="btn-draft-first-essay btn-draft-secondary"
                     onClick={onOpenCreateEssay}
                   >
-                    + Ship 30 Essay
+                    <FilePenLine size={12} aria-hidden="true" /> Ship 30 Essay
                   </button>
                 )}
               </div>
@@ -198,7 +212,13 @@ export function Sidebar({
                   >
                     <div className="essay-item-title-row">
                       <span className="essay-icon" aria-hidden="true">
-                        {isGen ? '⏳' : isHtml ? '🌐' : '📝'}
+                        {isGen ? (
+                          <LoaderCircle size={14} className="spin-slow" />
+                        ) : isHtml ? (
+                          <Code2 size={14} />
+                        ) : (
+                          <FileText size={14} />
+                        )}
                       </span>
                       <span className="essay-title-text">{displayTitle}</span>
                     </div>
@@ -235,7 +255,11 @@ export function Sidebar({
                   >
                     <div className="essay-item-title-row">
                       <span className="essay-icon" aria-hidden="true">
-                        {isGen ? '⏳' : '📜'}
+                        {isGen ? (
+                          <LoaderCircle size={14} className="spin-slow" />
+                        ) : (
+                          <FilePenLine size={14} />
+                        )}
                       </span>
                       <span className="essay-title-text">{displayTitle}</span>
                     </div>
@@ -280,7 +304,7 @@ export function Sidebar({
           </div>
         ) : sessions.length === 0 ? (
           <div className="sidebar-empty">
-            <span aria-hidden="true">💬</span>
+            <MessageCircle size={20} aria-hidden="true" className="empty-icon" />
             <p>No conversations yet</p>
             <span className="sidebar-subtext">Click "New Conversation" to start</span>
           </div>
@@ -303,7 +327,7 @@ export function Sidebar({
                 title={title}
               >
                 <div className="session-item-row">
-                  <span className="session-item-icon" aria-hidden="true">💭</span>
+                  <MessageCircle size={14} aria-hidden="true" className="session-item-icon" />
                   <span className="session-item-title">{title}</span>
                 </div>
                 {dateStr && <span className="session-item-date">{dateStr}</span>}
@@ -321,7 +345,6 @@ export function Sidebar({
             onToggleTheme={onToggleTheme}
             className="sidebar-theme-toggle"
           />
-          <span className="version-tag">Pi Agent Bridge</span>
         </div>
       </div>
     </aside>

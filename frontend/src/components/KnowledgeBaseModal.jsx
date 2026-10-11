@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Database, X, AlertTriangle, LoaderCircle, ShieldCheck } from 'lucide-react';
 import { fetchKnowledgeStatus } from '../api/client.js';
 
 /**
@@ -67,7 +68,9 @@ export function KnowledgeBaseModal({ isOpen = false, onClose }) {
       >
         <div className="modal-header">
           <div className="modal-title-row">
-            <span className="modal-icon" aria-hidden="true">🎙️</span>
+            <span className="modal-icon" aria-hidden="true">
+              <Database size={18} />
+            </span>
             <div>
               <h3 id="kb-modal-title" className="modal-title">
                 Lenny's Podcast Transcript Index
@@ -84,19 +87,19 @@ export function KnowledgeBaseModal({ isOpen = false, onClose }) {
             onClick={onClose}
             aria-label="Close knowledge base dialog"
           >
-            ✕
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
         <div className="modal-body">
           {isLoading ? (
             <div className="kb-loading-state" aria-live="polite">
-              <div className="loader-spinner" aria-hidden="true" />
+              <LoaderCircle size={20} className="spin-slow" aria-hidden="true" />
               <p>Querying PostgreSQL transcript index status...</p>
             </div>
           ) : error ? (
             <div className="kb-error-card" role="alert">
-              <span className="error-icon" aria-hidden="true">⚠️</span>
+              <AlertTriangle size={16} aria-hidden="true" className="error-icon" />
               <div className="kb-error-texts">
                 <strong>Status Unavailable</strong>
                 <p>{error}</p>
@@ -171,7 +174,9 @@ export function KnowledgeBaseModal({ isOpen = false, onClose }) {
 
               {/* Protocol Grounding Section */}
               <div className="kb-section">
-                <h4 className="kb-section-title">🛡️ Evidence Grounding Protocol</h4>
+                <h4 className="kb-section-title">
+                  <ShieldCheck size={16} aria-hidden="true" className="section-title-icon" /> Evidence Grounding Protocol
+                </h4>
                 <ul className="kb-principles-list">
                   <li>
                     <strong>Fail-Closed Retrieval:</strong> If the database contains insufficient evidence for an essay topic, generation halts immediately with an <em>insufficient_evidence</em> status.

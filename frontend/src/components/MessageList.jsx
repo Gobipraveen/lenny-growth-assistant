@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Sparkles, User, Bot, LoaderCircle, ArrowRight } from 'lucide-react';
 import { Citations } from './Citations.jsx';
 import { MarkdownRenderer } from './MarkdownRenderer.jsx';
 
@@ -36,7 +37,9 @@ export function MessageList({
     return (
       <div className="empty-chat-state" aria-label="Welcome view">
         <div className="welcome-card">
-          <div className="welcome-avatar" aria-hidden="true">🎙️</div>
+          <div className="welcome-avatar" aria-hidden="true">
+            <Sparkles size={24} />
+          </div>
           <h2>Turn Lenny's insights into growth strategies.</h2>
           <p className="welcome-desc">
             Ask any question about startup growth, product strategy, retention loops, or execution tactics. Every answer is grounded in verified Lenny's Podcast episode transcripts.
@@ -52,7 +55,7 @@ export function MessageList({
                   className="suggestion-chip"
                   onClick={() => onSelectSuggestion && onSelectSuggestion(text)}
                 >
-                  <span className="suggestion-arrow" aria-hidden="true">💡</span>
+                  <ArrowRight size={14} aria-hidden="true" className="suggestion-arrow" />
                   <span className="suggestion-text">{text}</span>
                 </button>
               ))}
@@ -78,7 +81,7 @@ export function MessageList({
             className={`message-row ${isUser ? 'user-message-row' : 'assistant-message-row'}`}
           >
             <div className={`message-avatar ${isUser ? 'user-avatar' : 'assistant-avatar'}`} aria-hidden="true">
-              {isUser ? '👤' : '🧠'}
+              {isUser ? <User size={15} /> : <Sparkles size={15} />}
             </div>
 
             <div className="message-bubble-container">
@@ -107,7 +110,9 @@ export function MessageList({
 
       {isSubmitting && (
         <article className="message-row assistant-message-row in-flight-row" aria-busy="true">
-          <div className="message-avatar assistant-avatar" aria-hidden="true">🧠</div>
+          <div className="message-avatar assistant-avatar" aria-hidden="true">
+            <Sparkles size={15} />
+          </div>
           <div className="message-bubble-container">
             <div className="message-header-meta">
               <span className="sender-name">Lenny Assistant</span>
@@ -115,13 +120,11 @@ export function MessageList({
             </div>
             <div className="message-bubble assistant-bubble thinking-bubble">
               <div className="thinking-indicator">
-                <span className="dot"></span>
-                <span className="dot"></span>
-                <span className="dot"></span>
+                <LoaderCircle size={14} className="spin-slow" aria-hidden="true" />
+                <span className="thinking-text">
+                  Retrieving podcast evidence & synthesizing answer...
+                </span>
               </div>
-              <span className="thinking-text">
-                Retrieving podcast evidence & synthesizing answer...
-              </span>
             </div>
           </div>
         </article>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FilePenLine, X, AlertTriangle, Sparkles, LoaderCircle } from 'lucide-react';
 
 const PROVEN_APPROACHES = [
   { value: 'framework', label: 'Framework (Structured systems & mental models)' },
@@ -101,7 +102,9 @@ export function CreateEssayModal({
       >
         <div className="modal-header">
           <div className="modal-title-row">
-            <span className="modal-icon" aria-hidden="true">✍️</span>
+            <span className="modal-icon" aria-hidden="true">
+              <FilePenLine size={18} />
+            </span>
             <div>
               <h3 id="create-essay-title" className="modal-title">
                 New Ship 30 for 30 Essay
@@ -119,7 +122,7 @@ export function CreateEssayModal({
             disabled={isSubmitting}
             aria-label="Close essay creation dialog"
           >
-            ✕
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -127,7 +130,7 @@ export function CreateEssayModal({
           <div className="modal-body">
             {formError && (
               <div className="form-error-banner" role="alert">
-                <span aria-hidden="true">⚠️</span>
+                <AlertTriangle size={14} aria-hidden="true" />
                 <span>{formError}</span>
               </div>
             )}
@@ -271,7 +274,7 @@ export function CreateEssayModal({
           <div className="modal-footer">
             <button
               type="button"
-              className="btn-cancel"
+              className="btn-modal-cancel"
               onClick={onClose}
               disabled={isSubmitting}
             >
@@ -279,17 +282,17 @@ export function CreateEssayModal({
             </button>
             <button
               type="submit"
-              className={`btn-submit-essay ${isSubmitting ? 'submitting' : ''}`}
+              className={`btn-modal-submit ${isSubmitting ? 'submitting' : ''}`}
               disabled={isSubmitting || !topic.trim()}
             >
               {isSubmitting ? (
                 <>
-                  <span className="spinner-inline" aria-hidden="true" />
-                  <span>Initiating Draft...</span>
+                  <LoaderCircle size={15} className="spin-slow" aria-hidden="true" />
+                  <span>Initiating Draft…</span>
                 </>
               ) : (
                 <>
-                  <span aria-hidden="true">🚀</span>
+                  <Sparkles size={15} aria-hidden="true" />
                   <span>Generate Essay</span>
                 </>
               )}

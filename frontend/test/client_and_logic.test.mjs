@@ -1687,3 +1687,103 @@ describe('Task 07C-2: Complete HTML/CSS Artifact Viewer and Creation Workflow (S
     assert.equal(res.generation_status, 'completed');
   });
 });
+
+describe('Task 08UI-2: Dark Theme UI Bug Fixes and Quality Guardrails', () => {
+  const cssPath = path.resolve(fileURLToPath(import.meta.url), '../../src/index.css');
+  const cssContent = fs.readFileSync(cssPath, 'utf-8');
+
+  it('1. Document canvas contrast rules: explicit theme-independent colors and dark mode immunity', () => {
+    // 1. .document-canvas has explicit white background and dark text
+    assert.ok(
+      cssContent.includes('.document-canvas {') &&
+      cssContent.includes('background-color: #FFFFFF !important;') &&
+      cssContent.includes('color: #1A1A1A !important;'),
+      'document-canvas must explicitly define #FFFFFF background and #1A1A1A text with !important'
+    );
+
+    // 2. [data-theme="dark"] .document-canvas has immunity rules ensuring dark headings
+    assert.ok(
+      cssContent.includes('[data-theme="dark"] .document-canvas .md-heading') &&
+      cssContent.includes('#111827 !important;'),
+      'Dark mode must enforce #111827 dark charcoal headings on document canvas'
+    );
+
+    // 3. [data-theme="dark"] .document-canvas has immunity rules ensuring dark body text
+    assert.ok(
+      cssContent.includes('[data-theme="dark"] .document-canvas .md-paragraph') &&
+      cssContent.includes('#374151 !important;'),
+      'Dark mode must enforce #374151 readable body text on document canvas'
+    );
+  });
+
+  it('2. Responsive artifact header: two-tier structure preventing title collapse at narrow widths', () => {
+    const viewerPath = path.resolve(fileURLToPath(import.meta.url), '../../src/components/ArtifactViewer.jsx');
+    const viewerContent = fs.readFileSync(viewerPath, 'utf-8');
+
+    // Header has two-tier responsive layout
+    assert.ok(viewerContent.includes('artifact-header-top'), 'Artifact header must include .artifact-header-top');
+    assert.ok(viewerContent.includes('artifact-header-bottom'), 'Artifact header must include .artifact-header-bottom');
+    assert.ok(viewerContent.includes('artifact-header-title-group'), 'Artifact header must group title elements');
+
+    // CSS provides ellipsis and prevents collapsing
+    assert.ok(cssContent.includes('.artifact-title {'), 'Artifact title class must be defined in CSS');
+    assert.ok(cssContent.includes('text-overflow: ellipsis;'), 'Artifact title must truncate with ellipsis');
+    assert.ok(cssContent.includes('white-space: nowrap;'), 'Artifact title must not wrap clumsily');
+  });
+
+  it('3. Dialog form structure and button classes: standardized modal classes and clear actions', () => {
+    const artifactModalPath = path.resolve(fileURLToPath(import.meta.url), '../../src/components/CreateArtifactModal.jsx');
+    const artifactModalContent = fs.readFileSync(artifactModalPath, 'utf-8');
+    const essayModalPath = path.resolve(fileURLToPath(import.meta.url), '../../src/components/CreateEssayModal.jsx');
+    const essayModalContent = fs.readFileSync(essayModalPath, 'utf-8');
+
+    // Both modals use standardized structural classes
+    for (const [name, content] of [['CreateArtifactModal', artifactModalContent], ['CreateEssayModal', essayModalContent]]) {
+      assert.ok(content.includes('modal-header'), `${name} must include .modal-header`);
+      assert.ok(content.includes('modal-body'), `${name} must include scrollable .modal-body`);
+      assert.ok(content.includes('modal-footer'), `${name} must include .modal-footer`);
+      assert.ok(content.includes('btn-modal-cancel'), `${name} must include .btn-modal-cancel`);
+      assert.ok(content.includes('btn-modal-submit'), `${name} must include .btn-modal-submit`);
+    }
+
+    // CSS specifies distinct styling for cancel vs primary submit buttons
+    assert.ok(cssContent.includes('.btn-modal-cancel {'), 'CSS must define .btn-modal-cancel');
+    assert.ok(cssContent.includes('.btn-modal-submit {'), 'CSS must define .btn-modal-submit');
+    assert.ok(cssContent.includes('height: 38px;'), 'Modal buttons must have consistent height');
+  });
+
+  it('4. Quality guardrails for HTML artifact generation: prompt contains strict layout and truthfulness rules', () => {
+    const agentPromptPath = path.resolve(fileURLToPath(import.meta.url), '../../../agent-service/src/pi_agent.mjs');
+    const agentPromptContent = fs.readFileSync(agentPromptPath, 'utf-8');
+
+    // Prompt contains complete self-contained HTML constraint
+    assert.ok(agentPromptContent.includes('<!DOCTYPE html>'), 'HTML prompt must require <!DOCTYPE html>');
+    assert.ok(agentPromptContent.includes('embedded <style> block'), 'HTML prompt must require embedded <style>');
+
+    // Strict no-JS and no external resources
+    assert.ok(agentPromptContent.includes('NO <script> tags or executable JavaScript'), 'Prompt must prohibit JavaScript');
+    assert.ok(agentPromptContent.includes('NO @import, NO remote url()'), 'Prompt must prohibit external fonts/styles');
+
+    // Prohibit broken placeholders and require illustrative labeling
+    assert.ok(agentPromptContent.includes('DO NOT use <img> tags pointing to placeholder'), 'Prompt must prohibit broken image placeholders');
+    assert.ok(agentPromptContent.includes('"Illustrative example" or "Sample data"'), 'Prompt must require illustrative labels for mock metrics');
+  });
+
+  it('5. Security isolation: sandboxed iframe and strict Content Security Policy are preserved', () => {
+    const viewerPath = path.resolve(fileURLToPath(import.meta.url), '../../src/components/ArtifactViewer.jsx');
+    const viewerContent = fs.readFileSync(viewerPath, 'utf-8');
+
+    // Iframe must strictly use sandbox="" without allow-scripts or allow-same-origin
+    assert.ok(
+      viewerContent.includes('sandbox=""'),
+      'ArtifactViewer iframe must maintain empty sandbox="" isolation'
+    );
+
+    // prepareSandboxedSrcDoc injects strict CSP
+    const testHtml = '<h1>Test Heading</h1><p>Test paragraph</p>';
+    const sandboxed = prepareSandboxedSrcDoc(testHtml);
+    assert.ok(sandboxed.includes("default-src 'none'"), 'Sandboxed document must enforce default-src \'none\' CSP');
+    assert.ok(sandboxed.includes("style-src 'unsafe-inline'"), 'Sandboxed document must permit only unsafe-inline styles');
+    assert.ok(!sandboxed.includes('allow-scripts'), 'Sandboxed document must not permit scripts');
+  });
+});

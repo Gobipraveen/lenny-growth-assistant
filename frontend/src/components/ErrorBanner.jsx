@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import { getErrorGuidance } from '../utils/formatters.js';
 
 export { getErrorGuidance };
@@ -13,7 +14,7 @@ export function ErrorBanner({ error, onDismiss, onRetry }) {
   return (
     <div className="error-banner" role="alert" aria-live="assertive">
       <div className="error-banner-content">
-        <span className="error-icon" aria-hidden="true">⚠️</span>
+        <AlertTriangle size={16} aria-hidden="true" className="error-icon" />
         <div className="error-texts">
           <div className="error-title-row">
             <strong className="error-title">
@@ -38,7 +39,7 @@ export function ErrorBanner({ error, onDismiss, onRetry }) {
             onClick={onDismiss}
             aria-label="Dismiss error"
           >
-            ✕
+            <X size={14} aria-hidden="true" />
           </button>
         )}
       </div>

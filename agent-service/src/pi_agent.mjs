@@ -766,24 +766,32 @@ ${message}`;
     let prompt;
     if (artifactType === "html") {
       prompt = `You are an expert product design and web artifact engine for Lenny's Growth Assistant.
-Your task is to generate a standalone, self-contained HTML/CSS document titled "${title}".
+Your task is to generate a standalone, polished, self-contained HTML/CSS document titled "${title}".
 
 USER INSTRUCTIONS:
 ${instructions}
 
 ${evidenceContext ? `VERIFIED TRANSCRIPT EVIDENCE:\n${evidenceContext}\n` : ""}
 STRICT SECURITY & CODING CONSTRAINTS:
-1. Return a complete, self-contained HTML document with <!DOCTYPE html>, <html>, <head> with an embedded <style> block, and <body>.
-2. DO NOT include any <script> tags or JavaScript code. All interactivity must be pure CSS (e.g. :hover, details/summary, CSS checkboxes/tabs).
-3. DO NOT use inline event handlers (NO onclick, onload, onerror, etc.).
-4. DO NOT reference external stylesheets, remote fonts, external images, or external scripts (NO <link rel="stylesheet">, NO @import, NO remote url()).
-5. DO NOT include forms that submit data, iframes, or frames.
-6. Design: Use a clean, modern aesthetic with accessible contrast and responsive layout (cards, tables, metrics, grid).
-7. If transcript insights are presented, ground claims in the provided evidence and cite chunk IDs using [chunk_id: <chunk_id>].
-8. Distinguish factual advice from any illustrative UI mock data (label fictitious dashboard values as sample/illustrative data).
+1. Complete Document: Return a single self-contained HTML document with <!DOCTYPE html>, <html lang="en">, <head> with <meta charset="UTF-8">, <meta name="viewport" content="width=device-width, initial-scale=1.0">, <title>${title}</title>, an embedded <style> block, and <body>.
+2. NO JavaScript: Absolutely NO <script> tags or executable JavaScript code. Interactivity must be pure CSS (e.g. :hover, :focus, details/summary).
+3. NO Inline Handlers: DO NOT use inline event attributes (NO onclick, onload, onerror, onmouseover, etc.).
+4. NO External Dependencies: DO NOT reference external stylesheets, remote fonts, external images, or external scripts (NO <link rel="stylesheet">, NO @import, NO remote url(), NO @font-face). Use clean system font stacks: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif.
+5. NO Forms, Inputs, or Submissions: DO NOT use <form>, <input>, <select>, <textarea>, or interactive widgets (sliders, toggles) that look functional but do nothing.
+6. NO Broken Placeholders: DO NOT use <img> tags pointing to placeholder or remote URLs. Instead, use inline SVG, CSS badges, icons, or clean typographic design.
+7. Truthful Content & Evidence Citations:
+   - Present factual strategic insights grounded in the provided transcript evidence. Cite transcript chunk IDs where applicable using [chunk_id: <chunk_id>].
+   - DO NOT invent arbitrary or fake business metrics and present them as historical facts.
+   - If sample dashboards, charts, or KPI numbers are included for illustration, ALWAYS clearly label them as "Illustrative example" or "Sample data".
+8. Visual Architecture & Layout Quality:
+   - Prefer polished, static compositions: executive KPI metric cards, strategy matrices, comparison tables, timeline milestones, or narrative summary cards.
+   - Use responsive modern CSS (CSS Grid, Flexbox, max-width containers, box-sizing: border-box).
+   - Establish strong typography and hierarchy: clear H1/H2/H3 titles, readable line-height (1.5-1.6), cohesive padding and margins.
+   - Ensure excellent contrast with accessible color palettes (e.g. elegant dark charcoal #0F1115 / #1E222B cards with high-contrast text, or clean light editorial palettes #FFFFFF / #F8FAFC with #0F172A text).
+   - Responsive sizing: The design MUST look clean and readable at a compact 420px preview width while scaling gracefully up to fullscreen (max-width: 1080px; margin: 0 auto). Avoid horizontal scrolling and overflowing content.
 
-OUTPUT:
-Output ONLY the clean HTML document wrapped inside a \`\`\`html code block.`;
+OUTPUT FORMAT:
+Output ONLY the clean, valid HTML document wrapped inside a single \`\`\`html code block.`;
     } else {
       prompt = `You are an expert product strategist for Lenny's Growth Assistant.
 Your task is to generate a structured Markdown document titled "${title}".

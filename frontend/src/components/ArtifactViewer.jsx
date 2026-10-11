@@ -1,4 +1,26 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import {
+  Eye,
+  Code2,
+  Copy,
+  Check,
+  Download,
+  Maximize2,
+  Minimize2,
+  X,
+  RefreshCw,
+  AlertTriangle,
+  ShieldAlert,
+  BookOpen,
+  Clock,
+  ExternalLink,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  FilePenLine,
+  Sparkles,
+  LoaderCircle,
+} from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer.jsx';
 import { slugify } from '../utils/markdown.js';
 import { prepareSandboxedSrcDoc, isGeneratingStatus } from '../utils/artifact.js';
@@ -7,7 +29,7 @@ export { prepareSandboxedSrcDoc };
 
 /**
  * Three-Panel Workspace Artifact Viewer (Right Panel).
- * Polymorphic viewer supporting:
+ * Polymorphic minimal viewer supporting:
  * 1. Ship 30 for 30 Markdown Essays (~1,250 words)
  * 2. Generic Markdown Strategic Reports & Playbooks
  * 3. Rendered HTML/CSS Visual Layouts & Dashboards in a strict sandboxed iframe
@@ -26,6 +48,7 @@ export function ArtifactViewer({
   const [activeTab, setActiveTab] = useState('preview'); // 'preview' | 'code'
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isWarningsExpanded, setIsWarningsExpanded] = useState(false);
 
   // Determine artifact category & content
   const isEssay = Boolean(artifact?.essay_id || (!artifact?.artifact_type && artifact?.markdown));
@@ -43,6 +66,19 @@ export function ArtifactViewer({
   const validationResults = artifact?.validation_results || {};
   const validationErrors = validationResults.errors || [];
   const validationWarnings = validationResults.warnings || [];
+
+  // Deduplicate advisory warnings visually while maintaining counts
+  const uniqueWarnings = useMemo(() => {
+    if (!validationWarnings || validationWarnings.length === 0) return [];
+    const counts = new Map();
+    for (const w of validationWarnings) {
+      counts.set(w, (counts.get(w) || 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([message, count]) => ({
+      message,
+      count,
+    }));
+  }, [validationWarnings]);
 
   // Generate trusted sandboxed iframe srcDoc
   const sandboxedSrcDoc = useMemo(() => {
@@ -88,166 +124,152 @@ export function ArtifactViewer({
       aria-label="Artifact viewer workspace"
       id="artifact-viewer-panel"
     >
-      {/* Top Header Bar */}
+      {/* Responsive Two-Tier Minimal Header Bar */}
       <div className="artifact-header">
-        <div className="artifact-header-left">
-          <span className="artifact-badge-icon" aria-hidden="true">
-            {isHtml ? '🌐' : isEssay ? '📜' : '📝'}
-          </span>
-          <div className="artifact-title-box">
+        <div className="artifact-header-top">
+          <div className="artifact-header-title-group">
+            <span className="artifact-badge-icon" aria-hidden="true">
+              {isHtml ? <Code2 size={16} /> : isEssay ? <FilePenLine size={16} /> : <FileText size={16} />}
+            </span>
             <h3 className="artifact-title" title={title}>
               {title}
             </h3>
-            <div className="artifact-meta-row">
-              <span className={`status-pill status-${status}`}>
-                <span className="status-dot" aria-hidden="true" />
-                {status === 'generating'
-                  ? 'Generating…'
-                  : status === 'completed'
-                  ? 'Completed'
-                  : status === 'validation_failed'
-                  ? 'Validation Flagged'
-                  : status === 'insufficient_evidence'
-                  ? 'Insufficient Evidence'
-                  : status === 'failed'
-                  ? 'Failed'
-                  : 'Ready'}
-              </span>
+          </div>
 
-              <span className="artifact-type-pill">
-                {isHtml ? 'HTML/CSS' : isEssay ? 'Ship 30 Essay' : 'Markdown'}
-              </span>
-
-              {isEssay && hasContent && (
-                <span className="word-count-badge" title={`Target: ${targetWords} words`}>
-                  {wordCount} / {targetWords} words
-                </span>
+          <div className="artifact-header-top-actions">
+            {/* Fullscreen Toggle */}
+            <button
+              type="button"
+              className={`artifact-action-btn btn-fullscreen-toggle ${isFullscreen ? 'active' : ''}`}
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? 'Exit full-screen mode' : 'Enter full-screen mode'}
+              aria-label={isFullscreen ? 'Exit full-screen mode' : 'Enter full-screen mode'}
+            >
+              {isFullscreen ? (
+                <Minimize2 size={14} aria-hidden="true" className="action-icon" />
+              ) : (
+                <Maximize2 size={14} aria-hidden="true" className="action-icon" />
               )}
-            </div>
+              <span className="action-label desktop-only-label">{isFullscreen ? 'Exit' : 'Full'}</span>
+            </button>
+
+            {/* Close Panel Button */}
+            <button
+              type="button"
+              className="artifact-close-btn"
+              onClick={onClose}
+              aria-label="Close artifact viewer panel"
+              title="Close artifact panel"
+            >
+              <X size={16} aria-hidden="true" />
+            </button>
           </div>
         </div>
 
-        <div className="artifact-header-actions">
-          {/* Copy Button */}
-          <button
-            type="button"
-            className={`artifact-action-btn ${copied ? 'copied' : ''}`}
-            onClick={handleCopy}
-            disabled={!hasContent}
-            title={copied ? 'Copied to clipboard!' : `Copy raw ${isHtml ? 'HTML' : 'Markdown'} to clipboard`}
-            aria-label={`Copy ${isHtml ? 'HTML' : 'Markdown'} content`}
-          >
-            <span className="action-icon" aria-hidden="true">
-              {copied ? '✓' : '📋'}
+        <div className="artifact-header-bottom">
+          <div className="artifact-meta-row">
+            <span className={`status-pill status-${status}`}>
+              <span className="status-dot" aria-hidden="true" />
+              {status === 'generating'
+                ? 'Generating…'
+                : status === 'completed'
+                ? 'Completed'
+                : status === 'validation_failed'
+                ? 'Flagged'
+                : status === 'insufficient_evidence'
+                ? 'No Evidence'
+                : status === 'failed'
+                ? 'Failed'
+                : 'Ready'}
             </span>
-            <span className="action-label">{copied ? 'Copied!' : 'Copy'}</span>
-          </button>
 
-          {/* Refresh Status Button (Active during in-progress generation or timeout) */}
-          {onRefreshStatus && isGeneratingState && (
-            <button
-              type="button"
-              className="artifact-action-btn btn-refresh-header"
-              onClick={onRefreshStatus}
-              title="Refresh generation status from server"
-              aria-label="Refresh artifact status"
-            >
-              <span className="action-icon" aria-hidden="true">🔄</span>
-              <span className="action-label">Check Status</span>
-            </button>
-          )}
-
-          {/* Download Button */}
-          <button
-            type="button"
-            className="artifact-action-btn"
-            onClick={handleDownload}
-            disabled={!hasContent}
-            title={`Download as .${isHtml ? 'html' : 'md'} file`}
-            aria-label={`Download ${isHtml ? 'HTML' : 'Markdown'} file`}
-          >
-            <span className="action-icon" aria-hidden="true">💾</span>
-            <span className="action-label">Export .{isHtml ? 'html' : 'md'}</span>
-          </button>
-
-          {/* Fullscreen Toggle */}
-          <button
-            type="button"
-            className={`artifact-action-btn ${isFullscreen ? 'active' : ''}`}
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? 'Exit full-screen mode' : 'Enter full-screen mode'}
-            aria-label="Toggle full-screen viewing mode"
-          >
-            <span className="action-icon" aria-hidden="true">
-              {isFullscreen ? '🗗' : '🗖'}
+            <span className="artifact-type-pill">
+              {isHtml ? 'HTML/CSS' : isEssay ? 'Ship 30' : 'Markdown'}
             </span>
-            <span className="action-label">{isFullscreen ? 'Exit' : 'Full'}</span>
-          </button>
 
-          {/* Close Panel Button */}
-          <button
-            type="button"
-            className="artifact-close-btn"
-            onClick={onClose}
-            aria-label="Close artifact viewer panel"
-            title="Close artifact panel"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
+            {isEssay && hasContent && (
+              <span className="word-count-badge" title={`Target: ${targetWords} words`}>
+                {wordCount} / {targetWords} w
+              </span>
+            )}
+          </div>
 
-      {/* Mode Tab Bar */}
-      <div className="artifact-tab-bar" role="tablist" aria-label="Artifact presentation tabs">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'preview'}
-          aria-controls="artifact-tabpanel"
-          className={`artifact-tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
-          onClick={() => setActiveTab('preview')}
-        >
-          <span className="tab-icon" aria-hidden="true">👁️</span>
-          <span>{isHtml ? 'Visual Preview' : 'Formatted Document'}</span>
-        </button>
+          <div className="artifact-header-controls">
+            {/* View Mode Toggle: Preview | Code */}
+            {hasContent && (
+              <div className="artifact-header-mode-toggle" role="tablist" aria-label="View mode">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'preview'}
+                  className={`mode-toggle-btn ${activeTab === 'preview' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('preview')}
+                  title={isHtml ? 'Visual Preview' : 'Formatted Document'}
+                >
+                  <Eye size={13} aria-hidden="true" />
+                  <span>Preview</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === 'code'}
+                  className={`mode-toggle-btn ${activeTab === 'code' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('code')}
+                  title={isHtml ? 'HTML Source Code' : 'Markdown Source Code'}
+                >
+                  <Code2 size={13} aria-hidden="true" />
+                  <span>Code</span>
+                </button>
+              </div>
+            )}
 
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === 'code'}
-          aria-controls="artifact-tabpanel"
-          className={`artifact-tab-btn ${activeTab === 'code' ? 'active' : ''}`}
-          onClick={() => setActiveTab('code')}
-        >
-          <span className="tab-icon" aria-hidden="true">💻</span>
-          <span>{isHtml ? 'HTML Source' : 'Markdown Source'}</span>
-        </button>
+            {/* Header Actions */}
+            <div className="artifact-header-actions">
+              {/* Copy Button */}
+              <button
+                type="button"
+                className={`artifact-action-btn ${copied ? 'copied' : ''}`}
+                onClick={handleCopy}
+                disabled={!hasContent}
+                title={copied ? 'Copied to clipboard!' : `Copy raw ${isHtml ? 'HTML' : 'Markdown'} to clipboard`}
+                aria-label={`Copy ${isHtml ? 'HTML' : 'Markdown'} content`}
+              >
+                {copied ? (
+                  <Check size={13} aria-hidden="true" className="action-icon text-success" />
+                ) : (
+                  <Copy size={13} aria-hidden="true" className="action-icon" />
+                )}
+                <span className="action-label desktop-only-label">{copied ? 'Copied' : 'Copy'}</span>
+              </button>
 
-        <div className="tab-bar-spacer" />
+              {/* Refresh Status Button */}
+              {onRefreshStatus && isGeneratingState && (
+                <button
+                  type="button"
+                  className="artifact-action-btn btn-refresh-header"
+                  onClick={onRefreshStatus}
+                  title="Refresh generation status from server"
+                  aria-label="Refresh artifact status"
+                >
+                  <RefreshCw size={13} aria-hidden="true" className="action-icon" />
+                  <span className="action-label desktop-only-label">Status</span>
+                </button>
+              )}
 
-        {/* Quick action triggers */}
-        <div className="tab-bar-action-group">
-          {onOpenCreateArtifact && (
-            <button
-              type="button"
-              className="btn-new-artifact-tab"
-              onClick={onOpenCreateArtifact}
-              title="Generate a new HTML or Markdown artifact"
-            >
-              <span aria-hidden="true">+</span> New Artifact
-            </button>
-          )}
-
-          {onOpenCreateEssay && (
-            <button
-              type="button"
-              className="btn-new-essay-tab"
-              onClick={onOpenCreateEssay}
-              title="Draft a new Ship 30 essay"
-            >
-              <span aria-hidden="true">+</span> Ship 30 Essay
-            </button>
-          )}
+              {/* Download Button */}
+              <button
+                type="button"
+                className="artifact-action-btn"
+                onClick={handleDownload}
+                disabled={!hasContent}
+                title={`Download as .${isHtml ? 'html' : 'md'} file`}
+                aria-label={`Download ${isHtml ? 'HTML' : 'Markdown'} file`}
+              >
+                <Download size={13} aria-hidden="true" className="action-icon" />
+                <span className="action-label desktop-only-label">Export</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -257,7 +279,7 @@ export function ArtifactViewer({
         {isGeneratingState ? (
           <div className="artifact-generating-state" aria-live="polite">
             <div className="generating-pulse-icon" aria-hidden="true">
-              <span className="pulse-dot-center" />
+              <LoaderCircle size={28} className="spin-slow" />
             </div>
             <h4 className="generating-title">
               {status === 'pending'
@@ -272,11 +294,11 @@ export function ArtifactViewer({
               {status === 'pending'
                 ? 'Job is queued in the background agent service and will begin synthesizing shortly.'
                 : isHtml
-                ? 'Synthesizing responsive semantic HTML with embedded Retro Sunset Neutral styling.'
+                ? 'Synthesizing responsive semantic HTML with embedded styling.'
                 : "Drafting structured sections grounded in Lenny's Podcast transcripts."}
             </p>
             <div className="generating-steps-list">
-              <div className={`step-item ${isGeneratingState ? 'active' : ''}`}>1. Searching 50+ podcast episodes for evidence passages</div>
+              <div className={`step-item ${isGeneratingState ? 'active' : ''}`}>1. Searching podcast transcripts for evidence passages</div>
               <div className={`step-item ${status === 'generating' ? 'active' : ''}`}>
                 {isHtml ? '2. Structuring semantic markup and self-contained CSS' : '2. Synthesizing narrative progression and framework'}
               </div>
@@ -285,8 +307,8 @@ export function ArtifactViewer({
             <div className="generating-polling-row">
               <span className="generating-note">
                 {isPollingTimedOut
-                  ? 'Auto-checking paused after 5.5m limit. Server background job may still be finishing.'
-                  : 'Observation active: polling status every 2.5s (bounded up to 330s).'}
+                  ? 'Auto-checking paused after limit. Server background job may still be finishing.'
+                  : 'Observation active: polling status every 2.5s.'}
               </span>
               {onRefreshStatus && (
                 <button
@@ -295,7 +317,7 @@ export function ArtifactViewer({
                   onClick={onRefreshStatus}
                   title="Check latest status from server"
                 >
-                  <span aria-hidden="true">🔄</span> Check Status Now
+                  <RefreshCw size={13} aria-hidden="true" /> Check Status Now
                 </button>
               )}
             </div>
@@ -303,7 +325,7 @@ export function ArtifactViewer({
         ) : status === 'failed' ? (
           /* State 2: Generation Failed */
           <div className="artifact-failed-card" role="alert">
-            <span className="failure-icon" aria-hidden="true">⚠️</span>
+            <AlertTriangle size={24} className="failure-icon" aria-hidden="true" />
             <h4>Generation Job Failed</h4>
             <p className="failure-message">{artifact?.error || 'Artifact generation encountered an unrecoverable error.'}</p>
             {onRetryGeneration && (
@@ -319,7 +341,7 @@ export function ArtifactViewer({
         ) : status === 'insufficient_evidence' ? (
           /* State 3: Insufficient Evidence */
           <div className="artifact-insufficient-card" role="alert">
-            <span className="insufficient-icon" aria-hidden="true">🔍</span>
+            <BookOpen size={24} className="insufficient-icon" aria-hidden="true" />
             <h4>Insufficient Transcript Evidence</h4>
             <p>
               {artifact?.error || "We could not find sufficient verified transcript passages in Lenny's Podcast index to ground this topic."}
@@ -344,23 +366,16 @@ export function ArtifactViewer({
         ) : hasContent ? (
           /* State 4: Content Ready (completed or validation_failed) */
           <div className="artifact-document-wrapper">
-            {/* Validation Warnings / Error Banner */}
-            {(status === 'validation_failed' || validationErrors.length > 0 || validationWarnings.length > 0) && (
-              <div className={`validation-alert-banner ${status === 'validation_failed' ? 'alert-danger' : 'alert-warning'}`} role="alert">
+            {/* Prominent Fatal Security Validation Error Banner */}
+            {(status === 'validation_failed' || validationErrors.length > 0) && (
+              <div className="validation-alert-banner alert-danger" role="alert">
                 <div className="alert-header">
-                  <span aria-hidden="true">⚠️</span>
-                  <strong>
-                    {status === 'validation_failed'
-                      ? 'Security Validation Issues Flagged'
-                      : 'Validation Advisory Warnings'}
-                  </strong>
+                  <ShieldAlert size={16} aria-hidden="true" />
+                  <strong>Security Validation Issues Flagged</strong>
                 </div>
                 <ul className="validation-issues-list">
                   {validationErrors.map((err, idx) => (
                     <li key={`err-${idx}`}><strong>Security Flag:</strong> {err}</li>
-                  ))}
-                  {validationWarnings.map((warn, idx) => (
-                    <li key={`warn-${idx}`}><strong>Warning:</strong> {warn}</li>
                   ))}
                 </ul>
                 {status === 'validation_failed' && isHtml && (
@@ -371,12 +386,48 @@ export function ArtifactViewer({
               </div>
             )}
 
+            {/* Collapsible Advisory Warnings Panel */}
+            {validationWarnings.length > 0 && (
+              <div className="validation-warnings-collapsible">
+                <button
+                  type="button"
+                  className="warnings-toggle-btn"
+                  onClick={() => setIsWarningsExpanded((prev) => !prev)}
+                  aria-expanded={isWarningsExpanded}
+                >
+                  <span className="warnings-toggle-left">
+                    <AlertTriangle size={14} className="warning-icon" aria-hidden="true" />
+                    <span>Validation warnings ({validationWarnings.length})</span>
+                  </span>
+                  {isWarningsExpanded ? (
+                    <ChevronDown size={14} aria-hidden="true" />
+                  ) : (
+                    <ChevronRight size={14} aria-hidden="true" />
+                  )}
+                </button>
+                {isWarningsExpanded && (
+                  <ul className="validation-warnings-list">
+                    {uniqueWarnings.map(({ message, count }, idx) => (
+                      <li key={`warn-${idx}`}>
+                        <span className="warning-msg-text">{message}</span>
+                        {count > 1 && (
+                          <span className="warning-count-pill" title={`${count} occurrences`}>
+                            ×{count}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             {/* Document Content View */}
             {activeTab === 'preview' ? (
               isHtml ? (
                 status === 'validation_failed' ? (
                   <div className="unsafe-preview-blocker" role="alert">
-                    <span className="blocker-icon" aria-hidden="true">🛡️</span>
+                    <ShieldAlert size={28} className="blocker-icon" aria-hidden="true" />
                     <h4>Visual Preview Blocked by Security Policy</h4>
                     <p>
                       This generated HTML document contains forbidden elements or unsafe constructs and cannot be rendered.
@@ -417,7 +468,7 @@ export function ArtifactViewer({
             {citations.length > 0 && (
               <div className="artifact-citations-section">
                 <div className="citations-section-header">
-                  <span className="citations-icon" aria-hidden="true">🎙️</span>
+                  <BookOpen size={16} className="citations-icon" aria-hidden="true" />
                   <h4>
                     {status === 'validation_failed'
                       ? `Transcript Citations (${citations.length})`
@@ -443,7 +494,7 @@ export function ArtifactViewer({
                           {cite.speaker && <span><strong>Speaker:</strong> {cite.speaker}</span>}
                           {timestampRange && (
                             <span className="cite-time">
-                              <span aria-hidden="true">⏱️</span> {timestampRange}
+                              <Clock size={12} aria-hidden="true" /> {timestampRange}
                             </span>
                           )}
                         </div>
@@ -462,7 +513,7 @@ export function ArtifactViewer({
                             className="cite-youtube-link"
                           >
                             <span>Watch on YouTube</span>
-                            <span aria-hidden="true"> ↗</span>
+                            <ExternalLink size={12} aria-hidden="true" />
                           </a>
                         )}
                       </article>
@@ -477,7 +528,7 @@ export function ArtifactViewer({
           <div className="artifact-empty-state">
             <div className="empty-state-card">
               <div className="empty-state-icon" aria-hidden="true">
-                <span className="icon-glow">✨</span>
+                <Sparkles size={28} />
               </div>
 
               <h4 className="empty-state-title">No Artifact Selected</h4>
@@ -488,7 +539,9 @@ export function ArtifactViewer({
 
               <div className="artifact-features-list">
                 <div className="feature-item">
-                  <span className="feature-bullet" aria-hidden="true">🌐</span>
+                  <span className="feature-bullet" aria-hidden="true">
+                    <Code2 size={16} />
+                  </span>
                   <div>
                     <strong>Interactive HTML/CSS Artifacts</strong>
                     <p>Visual KPI cards, pricing tables, and growth dashboards isolated in a zero-privilege sandboxed iframe.</p>
@@ -496,7 +549,9 @@ export function ArtifactViewer({
                 </div>
 
                 <div className="feature-item">
-                  <span className="feature-bullet" aria-hidden="true">✍️</span>
+                  <span className="feature-bullet" aria-hidden="true">
+                    <FilePenLine size={16} />
+                  </span>
                   <div>
                     <strong>Ship 30 for 30 Essays & Playbooks</strong>
                     <p>~1,250-word bounded essays with Hook, Trap, Breakthrough, Execution, and Framework sections.</p>
@@ -504,7 +559,9 @@ export function ArtifactViewer({
                 </div>
 
                 <div className="feature-item">
-                  <span className="feature-bullet" aria-hidden="true">🎙️</span>
+                  <span className="feature-bullet" aria-hidden="true">
+                    <BookOpen size={16} />
+                  </span>
                   <div>
                     <strong>Podcast Grounded</strong>
                     <p>Claims and insights are backed by Lenny's Podcast guest transcripts with real chunk citations.</p>
@@ -519,7 +576,8 @@ export function ArtifactViewer({
                     className="btn-trigger-artifact-create"
                     onClick={onOpenCreateArtifact}
                   >
-                    <span>🌐 Generate Visual HTML / Markdown</span>
+                    <Code2 size={14} aria-hidden="true" />
+                    <span>Generate Visual HTML / Markdown</span>
                   </button>
                 )}
 
@@ -529,7 +587,8 @@ export function ArtifactViewer({
                     className="btn-trigger-essay-create"
                     onClick={onOpenCreateEssay}
                   >
-                    <span>🚀 Draft Ship 30 Essay</span>
+                    <FilePenLine size={14} aria-hidden="true" />
+                    <span>Draft Ship 30 Essay</span>
                   </button>
                 )}
               </div>
@@ -541,7 +600,7 @@ export function ArtifactViewer({
       {/* Artifact Footer */}
       <div className="artifact-footer">
         <span className="footer-tag">
-          {artifact?.provider ? `Provider: ${artifact.provider}` : 'Oogway Labs Artifact Engine'}
+          {artifact?.provider ? `Provider: ${artifact.provider}` : 'Artifact Engine'}
         </span>
         <span className="footer-status">
           {status === 'generating'

@@ -23,6 +23,7 @@ import { PanelDivider } from './components/PanelDivider.jsx';
 import { KnowledgeBaseModal } from './components/KnowledgeBaseModal.jsx';
 import { CreateEssayModal } from './components/CreateEssayModal.jsx';
 import { CreateArtifactModal } from './components/CreateArtifactModal.jsx';
+import { FileText } from 'lucide-react';
 import { ARTIFACT_POLLING_CONFIG, isGeneratingStatus } from './utils/artifact.js';
 
 const LOCAL_STORAGE_SESSION_KEY = 'lenny_growth_selected_session_id';
@@ -895,8 +896,7 @@ export default function App() {
               onSelectSession={handleSelectSession}
               onNewSession={handleNewSession}
               isLoading={isLoadingSessions}
-              isOpen={mobileSidebarOpen}
-              onCloseMobile={() => setMobileSidebarOpen(false)}
+              isOpen={false}
               onToggleArtifactPanel={handleToggleArtifactPanel}
               isArtifactPanelOpen={isArtifactPanelOpen}
               onOpenKnowledgeBase={() => setIsKnowledgeBaseOpen(true)}
@@ -984,7 +984,7 @@ export default function App() {
                 onClick={handleToggleArtifactPanel}
                 title={isArtifactPanelOpen ? 'Hide Artifact Panel' : 'Show Artifact Panel'}
               >
-                <span aria-hidden="true">📜</span>
+                <FileText size={15} aria-hidden="true" />
                 <span>{isArtifactPanelOpen ? 'Hide Artifacts' : 'Artifacts'}</span>
               </button>
 
@@ -1092,12 +1092,6 @@ export default function App() {
         currentModel={status?.active_model || 'qwen2.5:1.5b'}
         isSubmitting={isSubmittingArtifact}
       />
-
-      {/* Footer */}
-      <footer className="app-footer">
-        <span>Oogway Labs Forward Deployed Engineering • Lenny Growth Assistant</span>
-        <span>Ship 30 Essay & Retro Sunset Neutral Workspace</span>
-      </footer>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { BookOpen, Clock, ExternalLink } from 'lucide-react';
 
 /**
  * Render verified citations from Lenny's Podcast transcripts.
@@ -18,7 +19,7 @@ export function Citations({ citations }) {
     <div className="citations-container" aria-label="Verified Source Citations">
       <div className="citations-header">
         <div className="citations-title">
-          <span className="citations-icon" aria-hidden="true">🎙️</span>
+          <BookOpen size={15} aria-hidden="true" className="citations-icon" />
           <span>Verified Podcast Sources ({citations.length})</span>
         </div>
         {citations.length > 2 && (
@@ -59,7 +60,7 @@ export function Citations({ citations }) {
                 )}
                 {timestampRange && (
                   <span className="citation-meta-item citation-timestamp">
-                    <span aria-hidden="true">⏱️</span> {timestampRange}
+                    <Clock size={12} aria-hidden="true" /> {timestampRange}
                   </span>
                 )}
               </div>
@@ -80,7 +81,7 @@ export function Citations({ citations }) {
                     title={`Watch "${cite.episode_title}" on YouTube`}
                   >
                     <span>Watch on YouTube</span>
-                    <span aria-hidden="true"> ↗</span>
+                    <ExternalLink size={12} aria-hidden="true" />
                   </a>
                 </div>
               )}
