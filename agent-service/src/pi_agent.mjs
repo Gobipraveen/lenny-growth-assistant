@@ -512,4 +512,197 @@ ${message}`;
       releaseLock();
     }
   }
+
+  /**
+   * Generates a constrained HTML or Markdown artifact using the Pi Agent SDK.
+   * Executes under strict sandbox-isolated conditions (tools: []).
+   */
+  async generateArtifact({
+    sessionId,
+    title,
+    artifactType,
+    instructions,
+    topic = null,
+    candidatePassages = [],
+    provider = config.defaultProvider,
+    model = null,
+  }) {
+    const releaseLock = await acquireLock(sessionId || "default");
+    const startTime = Date.now();
+
+    const selectedProvider = provider || config.defaultProvider;
+    if (!SUPPORTED_PROVIDERS.includes(selectedProvider)) {
+      releaseLock();
+      const err = new Error(`Unsupported provider '${selectedProvider}'. Supported: ${SUPPORTED_PROVIDERS.join(", ")}`);
+      err.statusCode = 400;
+      err.code = "INVALID_PROVIDER";
+      throw err;
+    }
+
+    const selectedModel = model || (selectedProvider === "anthropic" ? config.anthropicModel : config.ollamaModel);
+
+    if (selectedProvider === "anthropic" && !config.anthropicApiKey) {
+      releaseLock();
+      const err = new Error("Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).");
+      err.statusCode = 400;
+      err.code = "MISSING_CLOUD_CREDENTIALS";
+      throw err;
+    }
+
+    const modelsPath = syncModelsConfig();
+    let modelRuntime;
+    let targetModel;
+    try {
+      modelRuntime = await ModelRuntime.create({ modelsPath });
+      targetModel = modelRuntime.getModel(selectedProvider, selectedModel);
+      if (!targetModel) {
+        releaseLock();
+        const err = new Error(`Model '${selectedModel}' for provider '${selectedProvider}' is not configured in models.json.`);
+        err.statusCode = 400;
+        err.code = "MODEL_NOT_FOUND";
+        throw err;
+      }
+    } catch (mErr) {
+      if (mErr.code === "MODEL_NOT_FOUND" || mErr.statusCode === 400) throw mErr;
+      releaseLock();
+      const err = new Error(`Failed to load model runtime: ${mErr.message}`);
+      err.statusCode = 500;
+      err.code = "RUNTIME_INIT_ERROR";
+      throw err;
+    }
+
+    const cwd = config.agentDataDir;
+    const agentDir = config.agentDataDir;
+    const settingsManager = SettingsManager.create(cwd, agentDir);
+
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir,
+      settingsManager,
+    });
+    await resourceLoader.reload();
+
+    // Map evidence passages
+    let evidenceContext = "";
+    if (candidatePassages && candidatePassages.length > 0) {
+      evidenceContext = candidatePassages
+        .map((p, idx) => `[Evidence #${idx + 1}] chunk_id: "${p.chunk_id}" | Episode: "${p.episode_title}" | Guest: "${p.guest || "Unknown"}"\n"${p.content}"`)
+        .join("\n\n");
+    }
+
+    // Build constrained prompt
+    let prompt;
+    if (artifactType === "html") {
+      prompt = `You are an expert product design and web artifact engine for Lenny's Growth Assistant.
+Your task is to generate a standalone, self-contained HTML/CSS document titled "${title}".
+
+USER INSTRUCTIONS:
+${instructions}
+
+${evidenceContext ? `VERIFIED TRANSCRIPT EVIDENCE:\n${evidenceContext}\n` : ""}
+STRICT SECURITY & CODING CONSTRAINTS:
+1. Return a complete, self-contained HTML document with <!DOCTYPE html>, <html>, <head> with an embedded <style> block, and <body>.
+2. DO NOT include any <script> tags or JavaScript code. All interactivity must be pure CSS (e.g. :hover, details/summary, CSS checkboxes/tabs).
+3. DO NOT use inline event handlers (NO onclick, onload, onerror, etc.).
+4. DO NOT reference external stylesheets, remote fonts, external images, or external scripts (NO <link rel="stylesheet">, NO @import, NO remote url()).
+5. DO NOT include forms that submit data, iframes, or frames.
+6. Design: Use a clean, modern aesthetic with accessible contrast and responsive layout (cards, tables, metrics, grid).
+7. If transcript insights are presented, ground claims in the provided evidence and cite chunk IDs using [chunk_id: <chunk_id>].
+8. Distinguish factual advice from any illustrative UI mock data (label fictitious dashboard values as sample/illustrative data).
+
+OUTPUT:
+Output ONLY the clean HTML document wrapped inside a \`\`\`html code block.`;
+    } else {
+      prompt = `You are an expert product strategist for Lenny's Growth Assistant.
+Your task is to generate a structured Markdown document titled "${title}".
+
+USER INSTRUCTIONS:
+${instructions}
+
+${evidenceContext ? `VERIFIED TRANSCRIPT EVIDENCE:\n${evidenceContext}\n` : ""}
+CONSTRAINTS:
+1. Provide a well-structured, actionable Markdown document with headings (#, ##, ###), lists, tables, and bold highlights.
+2. Ground insights in the verified transcript evidence when available. Cite chunk IDs using [chunk_id: <chunk_id>].
+3. Clearly distinguish factual claims grounded in Lenny's Podcast from illustrative examples.
+
+OUTPUT:
+Output ONLY the Markdown content.`;
+    }
+
+    let session;
+    try {
+      const sessionResult = await createAgentSession({
+        cwd,
+        agentDir,
+        settingsManager,
+        resourceLoader,
+        model: targetModel,
+        modelRuntime,
+        sessionManager: SessionManager.inMemory(),
+        tools: [],
+      });
+      session = sessionResult.session;
+
+      let timerId;
+      const promptPromise = session.prompt(prompt);
+      const timeoutPromise = new Promise((_, reject) => {
+        timerId = setTimeout(() => {
+          const tErr = new Error(`Artifact generation timed out after ${config.requestTimeoutMs}ms.`);
+          tErr.statusCode = 504;
+          tErr.code = "INFERENCE_TIMEOUT";
+          reject(tErr);
+        }, config.requestTimeoutMs);
+      });
+
+      try {
+        await Promise.race([promptPromise, timeoutPromise]);
+      } finally {
+        if (timerId) clearTimeout(timerId);
+      }
+
+      const rawText = session.getLastAssistantText() || "";
+
+      // Extract content from code block if present
+      let cleanContent = rawText.trim();
+      const fenceMatch = cleanContent.match(/```(?:html|markdown)?\s*\n([\s\S]*?)```/);
+      if (fenceMatch) {
+        cleanContent = fenceMatch[1].trim();
+      }
+
+      // Extract cited chunk IDs
+      const citedChunks = [];
+      const citeRegex = /\[(?:chunk_id|chunk)(?::|=|\s+is\s+|:\s*)["']?([a-zA-Z0-9_-]+)["']?\]/gi;
+      let match;
+      const seenChunks = new Set();
+      while ((match = citeRegex.exec(cleanContent)) !== null) {
+        const cId = match[1].toLowerCase();
+        if (!seenChunks.has(cId)) {
+          seenChunks.add(cId);
+          citedChunks.push({ chunk_id: cId });
+        }
+      }
+
+      return {
+        artifact_type: artifactType,
+        title,
+        source_content: cleanContent,
+        citations: citedChunks,
+        provider: selectedProvider,
+        model: selectedModel,
+        duration_ms: Date.now() - startTime,
+      };
+    } catch (err) {
+      if (session) {
+        try {
+          await session.abort();
+        } catch (_) {}
+      }
+      throw err;
+    } finally {
+      if (session) {
+        session.dispose();
+      }
+      releaseLock();
+    }
+  }
 }

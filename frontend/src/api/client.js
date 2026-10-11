@@ -163,3 +163,105 @@ export async function postChatTurn(sessionId, { message, provider = null }) {
   // Returns APIResponse[ChatTurnResponse] -> extract data
   return res && res.data ? res.data : res;
 }
+
+/**
+ * Fetch knowledge-base indexed transcript and chunk statistics.
+ * Endpoint: GET /api/knowledge/status
+ * Response: APIResponse[KnowledgeStatusResponse]
+ */
+export async function fetchKnowledgeStatus() {
+  const res = await request('/api/knowledge/status');
+  return res && res.data ? res.data : res;
+}
+
+/**
+ * Start asynchronous generation of a Ship 30 for 30 essay.
+ * Endpoint: POST /api/sessions/{session_id}/essays
+ * Request: EssayGenerateRequest
+ * Response: APIResponse[EssayResponse]
+ */
+export async function createEssay(sessionId, payload) {
+  if (!sessionId) {
+    throw new ApiError(400, 'Cannot create essay without an active session ID');
+  }
+
+  const res = await request(`/api/sessions/${sessionId}/essays`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return res && res.data ? res.data : res;
+}
+
+/**
+ * List all essays generated within a specific chat session.
+ * Endpoint: GET /api/sessions/{session_id}/essays
+ * Response: APIResponse[List[EssaySummaryResponse]]
+ */
+export async function fetchEssays(sessionId) {
+  if (!sessionId) return [];
+  const res = await request(`/api/sessions/${sessionId}/essays`);
+  const list = res && res.data ? res.data : res;
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * Retrieve status, markdown, citations, and validation of a specific Ship 30 essay.
+ * Endpoint: GET /api/sessions/{session_id}/essays/{essay_id}
+ * Response: APIResponse[EssayResponse]
+ */
+export async function fetchEssay(sessionId, essayId, signal = null) {
+  if (!sessionId || !essayId) {
+    throw new ApiError(400, 'Both session ID and essay ID are required to fetch an essay');
+  }
+
+  const options = signal ? { signal } : {};
+  const res = await request(`/api/sessions/${sessionId}/essays/${essayId}`, options);
+  return res && res.data ? res.data : res;
+}
+
+/**
+ * Start asynchronous generation of an HTML or Markdown artifact.
+ * Endpoint: POST /api/sessions/{session_id}/artifacts
+ * Request: ArtifactCreateRequest
+ * Response: APIResponse[ArtifactResponse]
+ */
+export async function createArtifact(sessionId, payload) {
+  if (!sessionId) {
+    throw new ApiError(400, 'Cannot create artifact without an active session ID');
+  }
+
+  const res = await request(`/api/sessions/${sessionId}/artifacts`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+  return res && res.data ? res.data : res;
+}
+
+/**
+ * List all generic artifacts generated within a specific chat session.
+ * Endpoint: GET /api/sessions/{session_id}/artifacts
+ * Response: APIResponse[List[ArtifactSummaryResponse]]
+ */
+export async function fetchArtifacts(sessionId) {
+  if (!sessionId) return [];
+  const res = await request(`/api/sessions/${sessionId}/artifacts`);
+  const list = res && res.data ? res.data : res;
+  return Array.isArray(list) ? list : [];
+}
+
+/**
+ * Retrieve status, content, citations, and validation of a specific artifact.
+ * Endpoint: GET /api/sessions/{session_id}/artifacts/{artifact_id}
+ * Response: APIResponse[ArtifactResponse]
+ */
+export async function fetchArtifact(sessionId, artifactId, signal = null) {
+  if (!sessionId || !artifactId) {
+    throw new ApiError(400, 'Both session ID and artifact ID are required to fetch an artifact');
+  }
+
+  const options = signal ? { signal } : {};
+  const res = await request(`/api/sessions/${sessionId}/artifacts/${artifactId}`, options);
+  return res && res.data ? res.data : res;
+}

@@ -18,6 +18,7 @@ class ChatSession(Base):
 
     messages = relationship("ChatMessage", back_populates="session", cascade="all, delete-orphan", order_by="ChatMessage.created_at")
     essays = relationship("Essay", back_populates="session", cascade="all, delete-orphan", order_by="Essay.created_at")
+    artifacts = relationship("Artifact", back_populates="session", cascade="all, delete-orphan", order_by="Artifact.created_at")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"

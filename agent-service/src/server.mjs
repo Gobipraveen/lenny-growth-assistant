@@ -189,6 +189,78 @@ export function createAgentServer(customAgentManager = null) {
       }
     }
 
+    // Generic Artifact Generation endpoint (HTML & Markdown)
+    if (req.method === "POST" && url.pathname === "/artifact") {
+      const authHeader = req.headers["x-internal-token"];
+      if (!authHeader || authHeader !== config.internalSecret) {
+        return sendJson(res, 401, {
+          success: false,
+          error: "Unauthorized: Invalid internal token",
+          code: "UNAUTHORIZED"
+        });
+      }
+
+      try {
+        const payload = await parseJsonBody(req);
+        if (!payload.title || typeof payload.title !== "string" || !payload.title.trim()) {
+          return sendJson(res, 400, {
+            success: false,
+            error: "Bad Request: non-empty 'title' string is required",
+            code: "BAD_REQUEST"
+          });
+        }
+
+        const validTypes = ["html", "markdown"];
+        if (!payload.artifact_type || !validTypes.includes(payload.artifact_type)) {
+          return sendJson(res, 400, {
+            success: false,
+            error: `Bad Request: 'artifact_type' must be one of: ${validTypes.join(", ")}`,
+            code: "INVALID_ARTIFACT_TYPE"
+          });
+        }
+
+        if (!payload.instructions || typeof payload.instructions !== "string" || !payload.instructions.trim()) {
+          return sendJson(res, 400, {
+            success: false,
+            error: "Bad Request: non-empty 'instructions' string is required",
+            code: "BAD_REQUEST"
+          });
+        }
+
+        if (payload.provider && !SUPPORTED_PROVIDERS.includes(payload.provider)) {
+          return sendJson(res, 400, {
+            success: false,
+            error: `Bad Request: unsupported provider '${payload.provider}'. Supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
+            code: "INVALID_PROVIDER"
+          });
+        }
+
+        const result = await agentManager.generateArtifact({
+          sessionId: payload.session_id,
+          title: payload.title.trim(),
+          artifactType: payload.artifact_type,
+          instructions: payload.instructions.trim(),
+          topic: payload.topic,
+          candidatePassages: Array.isArray(payload.candidate_passages) ? payload.candidate_passages : [],
+          provider: payload.provider,
+          model: payload.model,
+        });
+
+        return sendJson(res, 200, {
+          success: true,
+          data: result
+        });
+      } catch (err) {
+        console.error("[PiAgentService] Error in /artifact:", err.message);
+        const statusCode = err.statusCode || (err.code === "INFERENCE_TIMEOUT" ? 504 : 500);
+        return sendJson(res, statusCode, {
+          success: false,
+          error: err.message,
+          code: err.code || "INTERNAL_ERROR"
+        });
+      }
+    }
+
     // Not Found
     return sendJson(res, 404, {
       success: false,

@@ -37,7 +37,7 @@ export function MessageList({
       <div className="empty-chat-state" aria-label="Welcome view">
         <div className="welcome-card">
           <div className="welcome-avatar" aria-hidden="true">🎙️</div>
-          <h2>Welcome to The Lenny Growth Assistant</h2>
+          <h2>Turn Lenny's insights into growth strategies.</h2>
           <p className="welcome-desc">
             Ask any question about startup growth, product strategy, retention loops, or execution tactics. Every answer is grounded in verified Lenny's Podcast episode transcripts.
           </p>
