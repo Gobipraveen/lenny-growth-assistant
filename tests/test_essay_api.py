@@ -93,7 +93,7 @@ class MockEssayAgentClient:
             "service": "lenny-pi-agent-service",
             "providers": {
                 "ollama": {"available": True, "model": "qwen2.5:1.5b"},
-                "anthropic": {"configured": False},
+                "gemini": {"configured": False},
             },
         }
 
@@ -216,8 +216,8 @@ def test_essay_unsupported_provider_rejected(test_client):
 
 
 def test_essay_missing_cloud_credentials_rejected(test_client, monkeypatch):
-    """Verify that selecting Anthropic when ANTHROPIC_API_KEY is unset returns 400."""
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+    """Verify that selecting Gemini when GEMINI_API_KEY is unset returns 400."""
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
     session_id = uuid.uuid4()
     db = TestingSessionLocal()
     db.add(ChatSession(id=session_id, title="Test Session"))
@@ -226,10 +226,10 @@ def test_essay_missing_cloud_credentials_rejected(test_client, monkeypatch):
 
     res = test_client.post(
         f"/api/sessions/{session_id}/essays",
-        json={"topic": "Product-Led Growth Playbook", "provider": "anthropic"},
+        json={"topic": "Product-Led Growth Playbook", "provider": "gemini"},
     )
     assert res.status_code == 400
-    assert "anthropic api key is not configured" in res.json()["detail"].lower()
+    assert "gemini api key is not configured" in res.json()["detail"].lower()
 
 
 # -----------------------------------------------------------------------------

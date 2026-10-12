@@ -13,7 +13,7 @@ export function ProviderSelector({
 }) {
   const providers = (status && status.providers) || [
     { provider: 'ollama', available: false, model: status?.active_model || 'Local LLM', details: 'Local LLM instance' },
-    { provider: 'anthropic', available: false, model: 'claude-3-5-sonnet-latest', details: 'Cloud LLM API' },
+    { provider: 'gemini', available: false, model: 'gemini-3.5-flash-lite', details: 'Google Gemini Cloud API' },
   ];
 
   const currentProviderInfo = providers.find((p) => p.provider === selectedProvider) || {
@@ -41,7 +41,7 @@ export function ProviderSelector({
           >
             {providers.map((p) => (
               <option key={p.provider} value={p.provider}>
-                {p.provider === 'ollama' ? 'Ollama (Local)' : 'Anthropic (Cloud)'}
+                {p.provider === 'ollama' ? 'Ollama (Local)' : 'Google Gemini (Cloud)'}
                 {p.available ? '' : ' - Not configured'}
               </option>
             ))}
@@ -64,11 +64,11 @@ export function ProviderSelector({
         </div>
       )}
 
-      {selectedProvider === 'anthropic' && !currentProviderInfo.available && (
+      {selectedProvider === 'gemini' && !currentProviderInfo.available && (
         <div className="provider-notice" role="note">
           <Info size={14} aria-hidden="true" />
           <span>
-            Anthropic provider selected, but ANTHROPIC_API_KEY is not configured in root .env. Local Ollama is recommended.
+            Google Gemini provider selected, but GEMINI_API_KEY is not configured in root .env. Local Ollama is recommended.
           </span>
         </div>
       )}

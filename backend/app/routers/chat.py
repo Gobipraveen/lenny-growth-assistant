@@ -50,8 +50,8 @@ async def get_chat_status(agent_client: AgentClient = Depends(get_agent_client))
     ollama_info = health_data.get("providers", {}).get("ollama", {})
     ollama_avail = ollama_info.get("available", False)
 
-    anthropic_info = health_data.get("providers", {}).get("anthropic", {})
-    anthropic_configured = bool(settings.ANTHROPIC_API_KEY) or anthropic_info.get("configured", False)
+    gemini_info = health_data.get("providers", {}).get("gemini", {})
+    gemini_configured = bool(settings.GEMINI_API_KEY) or gemini_info.get("configured", False)
 
     providers = [
         ProviderStatusInfo(
@@ -62,11 +62,11 @@ async def get_chat_status(agent_client: AgentClient = Depends(get_agent_client))
             details="Local Ollama instance" if ollama_avail else "Ollama offline or model not loaded",
         ),
         ProviderStatusInfo(
-            provider="anthropic",
-            available=anthropic_configured,
-            model=settings.ANTHROPIC_MODEL,
-            is_default=settings.LLM_PROVIDER == "anthropic",
-            details="Cloud Anthropic API (configured)" if anthropic_configured else "API key not configured",
+            provider="gemini",
+            available=gemini_configured,
+            model=settings.GEMINI_MODEL,
+            is_default=settings.LLM_PROVIDER == "gemini",
+            details="Google Gemini Cloud API (configured)" if gemini_configured else "API key not configured",
         ),
     ]
 
@@ -76,7 +76,7 @@ async def get_chat_status(agent_client: AgentClient = Depends(get_agent_client))
         data=ChatStatusResponse(
             providers=providers,
             active_provider=settings.LLM_PROVIDER,
-            active_model=settings.ANTHROPIC_MODEL if settings.LLM_PROVIDER == "anthropic" else settings.OLLAMA_MODEL,
+            active_model=settings.GEMINI_MODEL if settings.LLM_PROVIDER == "gemini" else settings.OLLAMA_MODEL,
             agent_service_online=agent_online,
         ),
     )
@@ -215,24 +215,24 @@ async def chat_turn(
             detail="User message cannot be empty or contain only whitespace.",
         )
 
-    supported_providers = {"ollama", "anthropic"}
+    supported_providers = {"ollama", "gemini"}
     target_provider = (turn_req.provider or settings.LLM_PROVIDER).lower()
     if target_provider not in supported_providers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider '{turn_req.provider}'. Supported providers: 'ollama', 'anthropic'.",
+            detail=f"Unsupported provider '{turn_req.provider}'. Supported providers: 'ollama', 'gemini'.",
         )
 
-    if target_provider == "anthropic":
-        if not (settings.ANTHROPIC_API_KEY and settings.ANTHROPIC_API_KEY.strip()):
+    if target_provider == "gemini":
+        if not (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip()):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Anthropic provider requested but ANTHROPIC_API_KEY is not configured in the environment.",
+                detail="Gemini provider requested but GEMINI_API_KEY is not configured in the environment.",
             )
-        if not (settings.ANTHROPIC_MODEL and settings.ANTHROPIC_MODEL.strip()):
+        if not (settings.GEMINI_MODEL and settings.GEMINI_MODEL.strip()):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Anthropic provider requested but ANTHROPIC_MODEL is not configured in the environment.",
+                detail="Gemini provider requested but GEMINI_MODEL is not configured in the environment.",
             )
 
     # 3. Read previous conversation history (ordered by created_at asc)

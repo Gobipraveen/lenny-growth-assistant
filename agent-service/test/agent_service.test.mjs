@@ -109,6 +109,9 @@ describe("Agent Service Isolated Tests", () => {
     assert.equal(body.service, "lenny-pi-agent-service");
     assert.ok(body.providers);
     assert.equal(body.providers.ollama.model, config.ollamaModel);
+    assert.ok(body.providers.gemini);
+    assert.equal(body.providers.gemini.model, config.geminiModel);
+    assert.equal(typeof body.providers.gemini.configured, "boolean");
     assert.equal(typeof body.uptime, "number");
   });
 
@@ -523,6 +526,33 @@ describe("Agent Service Isolated Tests", () => {
     assert.equal(body.data.citations.length, 1);
     assert.equal(body.data.citations[0].chunk_id, "test-chunk-123");
   });
+
+  // ---------------------------------------------------------------------------
+  // Google Gemini HTTP Routing & Secret Redaction Tests
+  // ---------------------------------------------------------------------------
+  test("POST /chat accepts 'gemini' and rejects legacy 'anthropic' with 400 INVALID_PROVIDER", async () => {
+    const res = await fetch(`${baseUrl}/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Internal-Token": config.internalSecret
+      },
+      body: JSON.stringify({ message: "Hello", provider: "anthropic" })
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.code, "INVALID_PROVIDER");
+    assert.ok(body.error.includes("unsupported provider 'anthropic'"));
+  });
+
+  test("Health check response redacts all secrets and does not leak GEMINI_API_KEY", async () => {
+    const res = await fetch(`${baseUrl}/health`);
+    const rawText = await res.text();
+    if (config.geminiApiKey) {
+      assert.ok(!rawText.includes(config.geminiApiKey), "GEMINI_API_KEY must never leak in /health response");
+    }
+    assert.ok(!rawText.includes(config.internalSecret), "AGENT_INTERNAL_SECRET must never leak in /health response");
+  });
 });
 
 describe("Chat Grounding, Compact Citations & Conservative Evidence", () => {
@@ -761,5 +791,56 @@ describe("Chat Grounding, Compact Citations & Conservative Evidence", () => {
   test("detectDistinctiveAbsentConcepts does NOT flag concepts that are present in retrieved chunks", () => {
     const absent = detectDistinctiveAbsentConcepts("Tell me about growth loops and retention", samplePassages);
     assert.equal(absent.length, 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. Google Gemini Provider Configuration & Offline Routing Tests
+  // ---------------------------------------------------------------------------
+  test("SUPPORTED_PROVIDERS contains 'ollama' and 'gemini', not 'anthropic'", () => {
+    assert.deepEqual([...SUPPORTED_PROVIDERS], ["ollama", "gemini"]);
+    assert.ok(!SUPPORTED_PROVIDERS.includes("anthropic"));
+  });
+
+  test("PiAgentManager rejects Gemini execution when GEMINI_API_KEY is missing without silent fallback", async () => {
+    const originalKey = config.geminiApiKey;
+    try {
+      config.geminiApiKey = "";
+      const manager = new PiAgentManager();
+      let caught = null;
+      try {
+        await manager.executeTurn({
+          sessionId: "test-gemini-nokey",
+          message: "What did Brian Chesky discuss?",
+          provider: "gemini"
+        });
+      } catch (err) {
+        caught = err;
+      }
+      assert.ok(caught, "Missing Gemini key must throw an error");
+      assert.equal(caught.statusCode, 400);
+      assert.equal(caught.code, "MISSING_CLOUD_CREDENTIALS");
+      assert.ok(caught.message.includes("GEMINI_API_KEY"));
+    } finally {
+      config.geminiApiKey = originalKey;
+    }
+  });
+
+  test("syncModelsConfig writes valid models.json with google and gemini providers when GEMINI_API_KEY configured", async () => {
+    const originalKey = config.geminiApiKey;
+    try {
+      config.geminiApiKey = "test-mock-gemini-key";
+      const modelsPath = syncModelsConfig();
+      const fs = await import("node:fs");
+      const content = JSON.parse(fs.readFileSync(modelsPath, "utf-8"));
+
+      assert.ok(content.providers.ollama);
+      assert.ok(content.providers.google);
+      assert.ok(content.providers.gemini);
+      assert.equal(content.providers.google.api, "google-generative-ai");
+      assert.equal(content.providers.google.models[0].id, config.geminiModel);
+      assert.equal(content.providers.gemini.models[0].id, config.geminiModel);
+    } finally {
+      config.geminiApiKey = originalKey;
+    }
   });
 });

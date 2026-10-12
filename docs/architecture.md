@@ -55,8 +55,8 @@ The planned PostgreSQL relational schema supports multi-turn chat sessions, pers
 ### 3.1 `sessions`
 * `id` (UUID, Primary Key): Unique session identifier.
 * `title` (VARCHAR(255)): Generated or user-defined session title.
-* `model_provider` (VARCHAR(50)): Active LLM provider (`ollama`, `anthropic`, `openai`).
-* `model_name` (VARCHAR(100)): Specific model ID (e.g., `llama3:8b`, `claude-3-5-sonnet`).
+* `model_provider` (VARCHAR(50)): Active LLM provider (`ollama`, `gemini`).
+* `model_name` (VARCHAR(100)): Specific model ID (e.g., `qwen2.5:1.5b`, `gemini-3.5-flash-lite`).
 * `created_at` (TIMESTAMP WITH TIME ZONE, Default NOW()).
 * `updated_at` (TIMESTAMP WITH TIME ZONE, Default NOW()).
 
@@ -198,7 +198,7 @@ The agent layer uses a decoupled bridge architecture connecting the FastAPI back
                ▼
       [LLM Inference Engine]
          ├── Local: Ollama (qwen2.5:1.5b via http://127.0.0.1:11434/v1)
-         └── Cloud: Anthropic Claude (claude-3-5-sonnet via API key)
+         └── Cloud: Google Gemini (gemini-3.5-flash-lite via API key)
                │
                ├─► Synthesize grounded response using transcript evidence
                ├─► Call search_transcripts tool if additional data needed
@@ -221,7 +221,7 @@ The agent layer uses a decoupled bridge architecture connecting the FastAPI back
 
 ### 6.2 Provider Switching & Configuration
 * **Default Provider:** Local Ollama (`qwen2.5:1.5b`).
-* **Cloud Provider:** Anthropic Claude (`claude-3-5-sonnet-20241022`).
+* **Cloud Provider:** Google Gemini (`gemini-3.5-flash-lite`).
 * Provider selection is dynamic via `.env` or per-request override (`ChatTurnRequest.provider`), requiring zero source code modifications.
 * There is no silent fallback: if Ollama fails, the error is returned immediately rather than incurring silent cloud charges.
 * `agent-service/.pi_runtime/models.json` is generated deterministically at runtime via `syncModelsConfig()`, ensuring 100% reproducible deployment without committing credentials.

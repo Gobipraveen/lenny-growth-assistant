@@ -232,20 +232,20 @@ async def create_essay(
         )
 
     target_provider = request.provider or settings.LLM_PROVIDER
-    if target_provider not in ["ollama", "anthropic"]:
+    if target_provider not in ["ollama", "gemini"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider '{target_provider}'. Supported: ollama, anthropic",
+            detail=f"Unsupported provider '{target_provider}'. Supported: ollama, gemini",
         )
 
-    if target_provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
+    if target_provider == "gemini" and not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).",
+            detail="Gemini API key is not configured in environment (GEMINI_API_KEY).",
         )
 
     target_model = request.model or (
-        settings.ANTHROPIC_MODEL if target_provider == "anthropic" else settings.OLLAMA_MODEL
+        settings.GEMINI_MODEL if target_provider == "gemini" else settings.OLLAMA_MODEL
     )
 
     # Avoid duplicate generation for identical topic currently in progress

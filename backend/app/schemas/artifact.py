@@ -32,7 +32,7 @@ class ArtifactCreateRequest(BaseModel):
     )
     provider: Optional[str] = Field(
         None,
-        description="Optional provider override ('ollama' or 'anthropic')",
+        description="Optional provider override ('ollama' or 'gemini')",
     )
     model: Optional[str] = Field(
         None,

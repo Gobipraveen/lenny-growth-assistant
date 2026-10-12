@@ -284,11 +284,11 @@ export function CreateArtifactModal({
             <div className="modal-engine-info-row">
               <div className="engine-info-item">
                 <span className="info-label">Active Provider:</span>
-                <span className="info-val">{provider === 'anthropic' ? 'Anthropic Claude' : 'Ollama Local LLM'}</span>
+                <span className="info-val">{provider === 'gemini' ? 'Google Gemini' : 'Ollama Local LLM'}</span>
               </div>
               <div className="engine-info-item">
                 <span className="info-label">Model:</span>
-                <span className="info-val">{currentModel || (provider === 'anthropic' ? 'Claude 3.5 Sonnet' : 'qwen2.5:1.5b')}</span>
+                <span className="info-val">{currentModel || (provider === 'gemini' ? 'Gemini 3.5 Flash-Lite' : 'qwen2.5:1.5b')}</span>
               </div>
               <div className="engine-info-item">
                 <span className="info-label">Security Sandbox:</span>

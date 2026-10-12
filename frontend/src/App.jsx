@@ -989,8 +989,8 @@ export default function App() {
               </button>
 
               <span className="active-provider-badge">
-                {selectedProvider === 'anthropic'
-                  ? `Anthropic${status?.active_model ? ` (${status.active_model})` : ''}`
+                {selectedProvider === 'gemini'
+                  ? `Gemini${status?.active_model ? ` (${status.active_model})` : ''}`
                   : `Ollama${status?.active_model ? ` (${status.active_model})` : ''}`}
               </span>
             </div>

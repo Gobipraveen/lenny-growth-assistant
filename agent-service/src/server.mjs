@@ -66,9 +66,9 @@ export function createAgentServer(customAgentManager = null) {
             baseUrl: config.ollamaBaseUrl,
             model: config.ollamaModel
           },
-          anthropic: {
-            configured: Boolean(config.anthropicApiKey),
-            model: config.anthropicModel
+          gemini: {
+            configured: Boolean(config.geminiApiKey),
+            model: config.geminiModel
           }
         },
         uptime: process.uptime()

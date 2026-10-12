@@ -256,21 +256,21 @@ async def create_artifact(
 
     # 3. Provider validation
     provider = payload.provider or settings.LLM_PROVIDER
-    if provider not in ["ollama", "anthropic"]:
+    if provider not in ["ollama", "gemini"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported provider '{provider}'. Must be 'ollama' or 'anthropic'.",
+            detail=f"Unsupported provider '{provider}'. Must be 'ollama' or 'gemini'.",
         )
 
-    if provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
+    if provider == "gemini" and not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).",
+            detail="Gemini API key is not configured in environment (GEMINI_API_KEY).",
         )
 
     model = payload.model
     if not model:
-        model = settings.ANTHROPIC_MODEL if provider == "anthropic" else settings.OLLAMA_MODEL
+        model = settings.GEMINI_MODEL if provider == "gemini" else settings.OLLAMA_MODEL
 
     # 4. Transcript evidence retrieval (grounding)
     candidate_passages = []

@@ -53,7 +53,7 @@ class MockAgentClient:
             "service": "lenny-pi-agent-service",
             "providers": {
                 "ollama": {"available": True, "model": "qwen2.5:1.5b"},
-                "anthropic": {"configured": False},
+                "gemini": {"configured": False},
             },
         }
         self.calls = []
@@ -480,7 +480,7 @@ def test_chat_status_endpoint(test_env):
             "status": "ok",
             "providers": {
                 "ollama": {"available": True, "model": "qwen2.5:1.5b"},
-                "anthropic": {"configured": False},
+                "gemini": {"configured": False},
             },
         }
     )

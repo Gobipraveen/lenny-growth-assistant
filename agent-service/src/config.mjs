@@ -14,7 +14,7 @@ if (fs.existsSync(rootEnvPath) && typeof process.loadEnvFile === "function") {
   } catch (_) {}
 }
 
-export const SUPPORTED_PROVIDERS = Object.freeze(["ollama", "anthropic"]);
+export const SUPPORTED_PROVIDERS = Object.freeze(["ollama", "gemini"]);
 
 const internalSecret = process.env.AGENT_INTERNAL_SECRET;
 
@@ -30,8 +30,8 @@ export const config = {
   fastapiUrl: process.env.FASTAPI_INTERNAL_URL || "http://127.0.0.1:8000",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
   ollamaModel: process.env.OLLAMA_MODEL || "qwen2.5:1.5b",
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
-  anthropicModel: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
+  geminiApiKey: process.env.GEMINI_API_KEY || "",
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
   defaultProvider: process.env.LLM_PROVIDER || "ollama",
   requestTimeoutMs: parseInt(process.env.AGENT_REQUEST_TIMEOUT_MS || "60000", 10),
   agentDataDir: path.resolve(AGENT_SERVICE_ROOT, ".pi_runtime"),

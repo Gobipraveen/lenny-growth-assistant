@@ -24,12 +24,12 @@ class Settings(BaseSettings):
     # Database (PostgreSQL - provisional placeholder for future milestone)
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/lenny_assistant"
 
-    # LLM Settings (provisional placeholders for future milestone)
-    LLM_PROVIDER: str = "ollama"  # 'ollama' or 'anthropic' or 'openai'
+    # LLM Settings
+    LLM_PROVIDER: str = "ollama"  # 'ollama' or 'gemini'
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3"
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
+    OLLAMA_MODEL: str = "qwen2.5:1.5b"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
     OPENAI_API_KEY: str = ""
 
     # Agent Service Configuration (Node.js Pi Agent Service)

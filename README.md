@@ -193,6 +193,76 @@ npm run dev
 
 ---
 
+## AI Providers Configuration (Ollama & Google Gemini)
+
+The application supports two genuine AI provider pathways:
+1. **Ollama (Local, Default):** `qwen2.5:1.5b` running entirely on your local machine via Ollama's HTTP API.
+2. **Google Gemini (Cloud, Optional):** Cloud inference using Google AI Studio API through the Pi Coding Agent SDK.
+
+### 1. Local Ollama Setup (Default)
+Ollama runs locally without external API keys or cloud egress:
+* Install Ollama from [https://ollama.com/](https://ollama.com/).
+* Pull the default local model:
+  ```powershell
+  ollama pull qwen2.5:1.5b
+  ```
+* Start the Ollama server:
+  ```powershell
+  ollama serve
+  ```
+* In `.env`, ensure:
+  ```env
+  LLM_PROVIDER="ollama"
+  OLLAMA_BASE_URL="http://localhost:11434"
+  OLLAMA_MODEL="qwen2.5:1.5b"
+  ```
+
+### 2. Google Gemini API Setup (Optional Cloud Provider)
+Google Gemini provides optional cloud inference with higher capacity:
+* **Where to create an API key:** Visit Google AI Studio at [https://aistudio.google.com/](https://aistudio.google.com/) and create a new API key.
+* **Configure `.env`:** Add your key and chosen model to the root `.env` file:
+  ```env
+  GEMINI_API_KEY="your-google-ai-studio-api-key"
+  GEMINI_MODEL="gemini-3.5-flash-lite"
+  ```
+  *Never commit or share your `.env` file. The application redacts all secrets and never leaks keys in logs or responses.*
+* **Model Selection:** The default model is `gemini-3.5-flash-lite`, recognized by the Pi Coding Agent SDK and available in Google AI Studio. You can customize this by setting `GEMINI_MODEL` to any supported Gemini model.
+
+### 3. Service Restarts After Configuration Changes
+Whenever you update `.env` (such as setting or changing `GEMINI_API_KEY` or `GEMINI_MODEL`):
+1. Stop the Node.js Agent Service (Terminal 2) and restart it:
+   ```powershell
+   cd agent-service
+   node src/server.mjs
+   ```
+2. If your FastAPI backend process does not auto-reload, restart it (Terminal 3):
+   ```powershell
+   .\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+   ```
+
+### 4. Provider Switching
+* **Default:** Ollama is selected by default in all chat sessions, essay drafts, and artifact generation dialogs.
+* **Dynamic Switching:** In the frontend header, select **Google Gemini (Cloud)** or choose it in the Ship 30 Essay or Artifact creation modals.
+* **No Silent Fallback:** If a Gemini request fails (e.g. invalid key, quota exhaustion, or service error), the application immediately returns a clear, actionable error. It **never** silently falls back to Ollama or runs unexpected models.
+
+### 5. Free-Tier Restrictions and Quota Errors
+* Google AI Studio offers free-tier quotas (Requests Per Minute / Requests Per Day) on supported models like `gemini-3.5-flash-lite`.
+* If your Google AI Studio project has restricted access, quota limits reached, or billing holds (e.g. HTTP 403 `PERMISSION_DENIED` or HTTP 429 `RESOURCE_EXHAUSTED`), the backend surfaces an informative 502 `PROVIDER_ERROR` dialog in the UI.
+* Always check your project status in the [Google Cloud Console](https://console.cloud.google.com/) or [Google AI Studio](https://aistudio.google.com/) if access is denied.
+
+### 6. Live Verification Status
+* **Ollama (Local):** Verified live end-to-end with real inference (`qwen2.5:1.5b`), citation retrieval against PostgreSQL transcript chunks, and message persistence (PASS).
+* **Google Gemini (Cloud):**
+  - Architecture integration (FastAPI $\rightarrow$ Node.js Pi Agent SDK $\rightarrow$ Google Generative AI API): PASS
+  - Deterministic offline test suites: PASS
+  - End-to-end request dispatch reaching Google API: PASS
+  - Missing-key and provider-error handling: PASS
+  - Live Gemini text generation: BLOCKED (Google API returned HTTP 403 `Forbidden: Your project has been denied access. Please contact support.`)
+  - Live Gemini essays and HTML artifact generation: NOT TESTED
+
+---
+
+
 ## Running Automated Tests
 
 ### Backend Python Tests (pytest)

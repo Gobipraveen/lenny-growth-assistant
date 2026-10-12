@@ -56,7 +56,7 @@ class MockQualityAgentClient:
             "service": "lenny-pi-agent-service",
             "providers": {
                 "ollama": {"available": True, "model": "qwen2.5:1.5b"},
-                "anthropic": {"configured": bool(settings.ANTHROPIC_API_KEY)},
+                "gemini": {"configured": bool(settings.GEMINI_API_KEY)},
             },
         }
 
@@ -411,22 +411,22 @@ def test_unsupported_provider_rejected_with_400(test_setup):
     assert "Unsupported provider 'openai_gpt4'" in resp.json()["detail"]
 
 
-def test_missing_anthropic_api_key_returns_actionable_error(test_setup, monkeypatch):
-    """Verify that requesting anthropic without ANTHROPIC_API_KEY returns HTTP 400 with actionable error."""
+def test_missing_gemini_api_key_returns_actionable_error(test_setup, monkeypatch):
+    """Verify that requesting gemini without GEMINI_API_KEY returns HTTP 400 with actionable error."""
     client = test_setup["client"]
     r_sess = client.post("/api/sessions", json={"title": "Missing Key Test"})
     session_id = r_sess.json()["id"]
 
-    # Ensure ANTHROPIC_API_KEY is empty
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "")
+    # Ensure GEMINI_API_KEY is empty
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "")
 
     resp = client.post(
         f"/api/sessions/{session_id}/chat",
-        json={"message": "Hello Claude", "provider": "anthropic"},
+        json={"message": "Hello Gemini", "provider": "gemini"},
     )
     assert resp.status_code == 400
     detail = resp.json()["detail"]
-    assert "ANTHROPIC_API_KEY is not configured" in detail
+    assert "GEMINI_API_KEY is not configured" in detail
 
 
 def test_no_silent_fallback_on_ollama_failure(test_setup):
@@ -504,21 +504,21 @@ def test_unreferenced_claims_with_guest_name_alone_not_cited(test_setup):
     assert len(data["citations"]) == 0
 
 
-def test_missing_anthropic_model_returns_actionable_error(test_setup, monkeypatch):
-    """Verify that requesting anthropic when ANTHROPIC_MODEL is unconfigured returns HTTP 400."""
+def test_missing_gemini_model_returns_actionable_error(test_setup, monkeypatch):
+    """Verify that requesting gemini when GEMINI_MODEL is unconfigured returns HTTP 400."""
     client = test_setup["client"]
     r_sess = client.post("/api/sessions", json={"title": "Missing Model Test"})
     session_id = r_sess.json()["id"]
 
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-test-key")
-    monkeypatch.setattr(settings, "ANTHROPIC_MODEL", "")
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setattr(settings, "GEMINI_MODEL", "")
 
     resp = client.post(
         f"/api/sessions/{session_id}/chat",
-        json={"message": "Hello Claude", "provider": "anthropic"},
+        json={"message": "Hello Gemini", "provider": "gemini"},
     )
     assert resp.status_code == 400
-    assert "ANTHROPIC_MODEL is not configured" in resp.json()["detail"]
+    assert "GEMINI_MODEL is not configured" in resp.json()["detail"]
 
 
 @pytest.mark.anyio

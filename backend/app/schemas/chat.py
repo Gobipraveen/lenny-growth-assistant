@@ -39,7 +39,7 @@ class ChatSessionWithMessages(ChatSessionResponse):
 
 class ChatTurnRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000, description="User question or follow-up prompt")
-    provider: Optional[str] = Field(None, description="Optional LLM provider override ('ollama' or 'anthropic')")
+    provider: Optional[str] = Field(None, description="Optional LLM provider override ('ollama' or 'gemini')")
 
 
 class VerifiedCitation(BaseModel):

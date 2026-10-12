@@ -195,7 +195,7 @@ describe('Frontend API Client and Contracts (Section A)', () => {
       data: {
         providers: [
           { provider: 'ollama', available: true, model: 'qwen2.5:1.5b', is_default: true, details: 'Local instance' },
-          { provider: 'anthropic', available: false, model: 'claude-3-5-sonnet-latest', is_default: false, details: 'API key not configured' },
+          { provider: 'gemini', available: false, model: 'gemini-3.5-flash-lite', is_default: false, details: 'API key not configured' },
         ],
         active_provider: 'ollama',
         active_model: 'qwen2.5:1.5b',
@@ -418,11 +418,11 @@ describe('UI Behavior and Logic Verification (Section B)', () => {
     assert.ok(getErrorGuidance(500).includes('unexpected error'));
   });
 
-  it('12. Ollama and Anthropic provider status displays accurately without llama3 fallback', () => {
+  it('12. Ollama and Gemini provider status displays accurately without llama3 fallback', () => {
     const statusData = {
       providers: [
         { provider: 'ollama', available: true, model: 'qwen2.5:1.5b', is_default: true },
-        { provider: 'anthropic', available: false, model: 'claude-3-5-sonnet-latest', is_default: false },
+        { provider: 'gemini', available: false, model: 'gemini-3.5-flash-lite', is_default: false },
       ],
       active_provider: 'ollama',
       active_model: 'qwen2.5:1.5b',
@@ -1100,7 +1100,7 @@ describe('Task 07C-2: Complete HTML/CSS Artifact Viewer and Creation Workflow (S
         title: 'Retention Playbook',
         artifact_type: 'markdown',
         generation_status: 'completed',
-        provider: 'anthropic',
+        provider: 'gemini',
         created_at: '2026-10-11T08:05:00Z',
         updated_at: '2026-10-11T08:06:00Z',
       },

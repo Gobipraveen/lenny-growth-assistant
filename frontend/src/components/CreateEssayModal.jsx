@@ -266,7 +266,7 @@ export function CreateEssayModal({
                 disabled={isSubmitting}
               >
                 <option value="ollama">Ollama (Local model)</option>
-                <option value="anthropic">Anthropic (Claude 3.5 Sonnet)</option>
+                <option value="gemini">Google Gemini (Cloud)</option>
               </select>
             </div>
           </div>

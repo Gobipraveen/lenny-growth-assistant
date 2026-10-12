@@ -39,21 +39,23 @@ export function syncModelsConfig() {
     }
   };
 
-  if (config.anthropicApiKey) {
-    modelsConfig.providers.anthropic = {
-      baseUrl: "https://api.anthropic.com/v1",
-      api: "anthropic-messages",
-      apiKey: config.anthropicApiKey,
+  if (config.geminiApiKey) {
+    const googleDef = {
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      api: "google-generative-ai",
+      apiKey: config.geminiApiKey,
       models: [
         {
-          id: config.anthropicModel,
-          name: "Claude 3.5 Sonnet",
-          contextWindow: 200000,
-          maxTokens: 4096,
-          input: ["text"]
+          id: config.geminiModel,
+          name: `Google Gemini (${config.geminiModel})`,
+          contextWindow: 1048576,
+          maxTokens: 65536,
+          input: ["text", "image"]
         }
       ]
     };
+    modelsConfig.providers.google = googleDef;
+    modelsConfig.providers.gemini = googleDef;
   }
 
   const modelsPath = path.join(config.agentDataDir, "models.json");
@@ -250,6 +252,27 @@ export function detectDistinctiveAbsentConcepts(message = "", passages = []) {
   return [...new Set(absent)];
 }
 
+export function extractAssistantError(session) {
+  if (!session || !session.messages) return null;
+  const lastMsg = session.messages.slice().reverse().find((m) => m.role === "assistant");
+  if (lastMsg && (lastMsg.stopReason === "error" || lastMsg.errorMessage)) {
+    let errorMsg = lastMsg.errorMessage || "Unknown provider error during inference.";
+    try {
+      const parsed = JSON.parse(errorMsg);
+      if (parsed.error?.message) {
+        try {
+          const nested = JSON.parse(parsed.error.message);
+          errorMsg = nested.error?.message || parsed.error.message;
+        } catch (_) {
+          errorMsg = parsed.error.message;
+        }
+      }
+    } catch (_) {}
+    return errorMsg;
+  }
+  return null;
+}
+
 export class PiAgentManager {
   constructor() {
     syncModelsConfig();
@@ -276,12 +299,12 @@ export class PiAgentManager {
       throw err;
     }
 
-    const selectedModel = model || (selectedProvider === "anthropic" ? config.anthropicModel : config.ollamaModel);
+    const selectedModel = model || (selectedProvider === "gemini" ? config.geminiModel : config.ollamaModel);
 
     // Validate provider credentials if cloud
-    if (selectedProvider === "anthropic" && !config.anthropicApiKey) {
+    if (selectedProvider === "gemini" && !config.geminiApiKey) {
       releaseLock();
-      const err = new Error("Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).");
+      const err = new Error("Gemini API key is not configured in environment (GEMINI_API_KEY).");
       err.statusCode = 400;
       err.code = "MISSING_CLOUD_CREDENTIALS";
       throw err;
@@ -294,7 +317,8 @@ export class PiAgentManager {
     let targetModel;
     try {
       modelRuntime = await ModelRuntime.create({ modelsPath });
-      targetModel = modelRuntime.getModel(selectedProvider, selectedModel);
+      const runtimeProvider = selectedProvider === "gemini" ? "google" : selectedProvider;
+      targetModel = modelRuntime.getModel(runtimeProvider, selectedModel) || modelRuntime.getModel(selectedProvider, selectedModel);
       if (!targetModel) {
         releaseLock();
         const err = new Error(`Model '${selectedModel}' for provider '${selectedProvider}' is not configured in models.json.`);
@@ -484,6 +508,14 @@ ${message}`;
         if (timerId) clearTimeout(timerId);
       }
 
+      const assistantError = extractAssistantError(session);
+      if (assistantError) {
+        const pErr = new Error(`Provider '${selectedProvider}' inference failed: ${assistantError}`);
+        pErr.statusCode = 502;
+        pErr.code = "PROVIDER_ERROR";
+        throw pErr;
+      }
+
       let finalAnswer = session.getLastAssistantText() || "";
       const durationMs = Date.now() - startTime;
 
@@ -552,11 +584,11 @@ ${message}`;
       throw err;
     }
 
-    const selectedModel = model || (selectedProvider === "anthropic" ? config.anthropicModel : config.ollamaModel);
+    const selectedModel = model || (selectedProvider === "gemini" ? config.geminiModel : config.ollamaModel);
 
-    if (selectedProvider === "anthropic" && !config.anthropicApiKey) {
+    if (selectedProvider === "gemini" && !config.geminiApiKey) {
       releaseLock();
-      const err = new Error("Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).");
+      const err = new Error("Gemini API key is not configured in environment (GEMINI_API_KEY).");
       err.statusCode = 400;
       err.code = "MISSING_CLOUD_CREDENTIALS";
       throw err;
@@ -584,7 +616,8 @@ ${message}`;
     let targetModel;
     try {
       modelRuntime = await ModelRuntime.create({ modelsPath });
-      targetModel = modelRuntime.getModel(selectedProvider, selectedModel);
+      const runtimeProvider = selectedProvider === "gemini" ? "google" : selectedProvider;
+      targetModel = modelRuntime.getModel(runtimeProvider, selectedModel) || modelRuntime.getModel(selectedProvider, selectedModel);
       if (!targetModel) {
         releaseLock();
         const err = new Error(`Model '${selectedModel}' for provider '${selectedProvider}' is not configured in models.json.`);
@@ -645,6 +678,13 @@ ${message}`;
         });
         try {
           await Promise.race([promptPromise, timeoutPromise]);
+          const assistantError = extractAssistantError(session);
+          if (assistantError) {
+            const pErr = new Error(`Provider '${selectedProvider}' inference failed: ${assistantError}`);
+            pErr.statusCode = 502;
+            pErr.code = "PROVIDER_ERROR";
+            throw pErr;
+          }
           return session.getLastAssistantText() || "";
         } finally {
           if (timerId) clearTimeout(timerId);
@@ -711,11 +751,11 @@ ${message}`;
       throw err;
     }
 
-    const selectedModel = model || (selectedProvider === "anthropic" ? config.anthropicModel : config.ollamaModel);
+    const selectedModel = model || (selectedProvider === "gemini" ? config.geminiModel : config.ollamaModel);
 
-    if (selectedProvider === "anthropic" && !config.anthropicApiKey) {
+    if (selectedProvider === "gemini" && !config.geminiApiKey) {
       releaseLock();
-      const err = new Error("Anthropic API key is not configured in environment (ANTHROPIC_API_KEY).");
+      const err = new Error("Gemini API key is not configured in environment (GEMINI_API_KEY).");
       err.statusCode = 400;
       err.code = "MISSING_CLOUD_CREDENTIALS";
       throw err;
@@ -726,7 +766,8 @@ ${message}`;
     let targetModel;
     try {
       modelRuntime = await ModelRuntime.create({ modelsPath });
-      targetModel = modelRuntime.getModel(selectedProvider, selectedModel);
+      const runtimeProvider = selectedProvider === "gemini" ? "google" : selectedProvider;
+      targetModel = modelRuntime.getModel(runtimeProvider, selectedModel) || modelRuntime.getModel(selectedProvider, selectedModel);
       if (!targetModel) {
         releaseLock();
         const err = new Error(`Model '${selectedModel}' for provider '${selectedProvider}' is not configured in models.json.`);
@@ -838,6 +879,14 @@ Output ONLY the Markdown content.`;
         await Promise.race([promptPromise, timeoutPromise]);
       } finally {
         if (timerId) clearTimeout(timerId);
+      }
+
+      const assistantError = extractAssistantError(session);
+      if (assistantError) {
+        const pErr = new Error(`Provider '${selectedProvider}' inference failed: ${assistantError}`);
+        pErr.statusCode = 502;
+        pErr.code = "PROVIDER_ERROR";
+        throw pErr;
       }
 
       const rawText = session.getLastAssistantText() || "";
