@@ -131,7 +131,7 @@ ${assignedEvidenceText ? `VERIFIED EVIDENCE CHUNKS ASSIGNED TO THIS SECTION:\n${
 ${priorSectionsText ? `PRIOR CONTEXT (for continuity only):\n${priorSectionsText.slice(-600)}\n` : ""}
 
 CRITICAL GENERATION CONSTRAINTS (MANDATORY):
-1. LENGTH CONSTRAINT: Write strictly between ${minWords} and ${maxWords} words (target: ~${section.targetWords} words). Do NOT exceed ${maxWords} words.
+1. LENGTH CONSTRAINT: Write thoroughly to meet the target of ~${section.targetWords} words (strict range: ${minWords} to ${maxWords} words). Elaborate fully on reasoning, real-world context, and practical nuances rather than summarizing briefly. Do NOT exceed ${maxWords} words.
 2. Produce ONLY the requested section prose. Do NOT write an entire multi-section essay.
 3. Do NOT repeat prior sections, repeat prior paragraphs, or repeat concluding quotes from earlier sections.
 4. Do NOT repeat supplied transcript evidence verbatim. Synthesize core principles.
@@ -164,4 +164,27 @@ COMPRESSION RULES:
 2. Cut filler, conversational preamble, repeated quotes, and verbose elaboration.
 3. Output ONLY the compressed Markdown prose for this section. No outer code fences, no introductory meta-commentary.
 4. Stop immediately once the concise point is made.`;
+}
+
+/**
+ * Builds a prompt for bounded single-section expansion when an assembled essay is underlength (<1,100 words).
+ * @param {object} section - Section definition
+ * @param {string} draftText - The current draft text of the section
+ * @param {number} additionalWords - Target additional word count
+ * @returns {string} Expansion prompt
+ */
+export function buildExpansionPrompt(section, draftText, additionalWords = 120) {
+  return `You are expanding Section "${section.title}" for a Ship 30 for 30 essay to meet the required depth and word budget.
+The current draft is concise (${countWords(draftText)} words), and needs approximately ${additionalWords} more words of substantive explanation.
+
+EXPANSION INSTRUCTIONS:
+1. Deepen the practical explanation, concrete real-world context, and step-by-step reasoning. Do NOT add generic filler or fluff.
+2. PRESERVE ALL EXISTING CITATIONS (e.g. [S1], [S2] or [chunk_id: ...]). Do NOT alter or delete any existing citation tokens.
+3. Do NOT invent new quotes, fake statistics, or unverified claims.
+4. Do NOT add new H1 or H2 headings. Keep the existing heading structure intact.
+5. Do NOT wrap prose in outer markdown code fences.
+6. Return the COMPLETE, ENRICHED section (original substance with expanded explanations woven in).
+
+CURRENT SECTION DRAFT:
+${draftText}`;
 }

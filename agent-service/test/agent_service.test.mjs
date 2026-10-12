@@ -80,6 +80,21 @@ describe("Agent Service Isolated Tests", () => {
         duration_ms: 120
       };
     }
+
+    async generateArtifact(args) {
+      this.lastGenerateArtifactArgs = args;
+      if (this.shouldThrow) {
+        throw this.shouldThrow;
+      }
+      return {
+        artifact_id: "test-art-123",
+        source_content: "<html><body><h1>Test Artifact</h1></body></html>",
+        citations: [],
+        duration_ms: 200,
+        provider: args.provider || "ollama",
+        model: args.model || "qwen2.5:1.5b",
+      };
+    }
   }
 
   before(async () => {
@@ -553,6 +568,35 @@ describe("Agent Service Isolated Tests", () => {
     }
     assert.ok(!rawText.includes(config.internalSecret), "AGENT_INTERNAL_SECRET must never leak in /health response");
   });
+
+  test("POST /artifact maps inference timeout to HTTP 504", async () => {
+    const tErr = new Error("Artifact generation timed out after 150000ms.");
+    tErr.code = "INFERENCE_TIMEOUT";
+    tErr.statusCode = 504;
+    mockManager.shouldThrow = tErr;
+
+    try {
+      const res = await fetch(`${baseUrl}/artifact`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Token": config.internalSecret,
+        },
+        body: JSON.stringify({
+          title: "Timeout Artifact",
+          artifact_type: "html",
+          instructions: "Generate test artifact",
+        }),
+      });
+
+      assert.equal(res.status, 504);
+      const body = await res.json();
+      assert.equal(body.success, false);
+      assert.equal(body.code, "INFERENCE_TIMEOUT");
+    } finally {
+      mockManager.shouldThrow = null;
+    }
+  });
 });
 
 describe("Chat Grounding, Compact Citations & Conservative Evidence", () => {
@@ -842,5 +886,10 @@ describe("Chat Grounding, Compact Citations & Conservative Evidence", () => {
     } finally {
       config.geminiApiKey = originalKey;
     }
+  });
+
+  test("config.artifactTimeoutMs is configured with bounded ceiling (defaults to 150000ms)", () => {
+    assert.ok(typeof config.artifactTimeoutMs === "number");
+    assert.ok(config.artifactTimeoutMs >= 120000 && config.artifactTimeoutMs <= 300000);
   });
 });

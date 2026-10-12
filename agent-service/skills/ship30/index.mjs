@@ -5,7 +5,7 @@
 
 import { validateSkillInput, normalizeEvidence, ESSAY_DEFAULTS } from "./contracts.mjs";
 import { createEssayPlan } from "./planner.mjs";
-import { buildGenerationPrompt, buildSectionPrompt, buildCompressionPrompt } from "./prompt_builder.mjs";
+import { buildGenerationPrompt, buildSectionPrompt, buildCompressionPrompt, buildExpansionPrompt } from "./prompt_builder.mjs";
 import { validateEssay, countWords, stripOuterMarkdownFence, extractCompactCitationTokens } from "./validator.mjs";
 
 export {
@@ -15,6 +15,7 @@ export {
   buildGenerationPrompt,
   buildSectionPrompt,
   buildCompressionPrompt,
+  buildExpansionPrompt,
   validateEssay,
   countWords,
   stripOuterMarkdownFence,
@@ -22,6 +23,7 @@ export {
   assembleEssaySections,
   ESSAY_DEFAULTS,
 };
+
 
 /**
  * Assembles 5 sequentially generated sections into a cohesive Ship 30 Markdown essay.
@@ -154,6 +156,7 @@ export async function executeSkillWorkflow({ input, generateFn, generateSectionF
     if (typeof generateSectionFn === "function") {
       const sectionTexts = [];
       let accumulatedText = "";
+      let compressionOccurred = false;
       for (const section of plan.sections) {
         const sectionPrompt = buildSectionPrompt(section, plan, accumulatedText);
         let sectionText = await generateSectionFn({
@@ -171,6 +174,7 @@ export async function executeSkillWorkflow({ input, generateFn, generateSectionF
 
         // Detect overlong section
         if (sectionWords > maxSectionWords) {
+          compressionOccurred = true;
           // Bounded revision: at most ONE compression attempt
           const compressionPrompt = buildCompressionPrompt(section, cleanSection, section.targetWords);
           const compressedText = await generateSectionFn({
@@ -226,6 +230,49 @@ export async function executeSkillWorkflow({ input, generateFn, generateSectionF
         accumulatedText += `\n\n${cleanSection}`.trim();
       }
       generatedMarkdown = assembleEssaySections({ plan, sectionTexts });
+
+      // Deterministic Bounded Underlength Expansion (at most ONE attempt)
+      const currentWordCount = countWords(generatedMarkdown);
+      if (!compressionOccurred && currentWordCount < sanitizedInput.min_word_count && typeof generateSectionFn === "function") {
+        const targetSectionIdx = sectionTexts.findIndex((s) => s.section.id === "section_3_insights");
+        const expandIdx = targetSectionIdx >= 0 ? targetSectionIdx : (sectionTexts.length > 2 ? 2 : 0);
+        const targetItem = sectionTexts[expandIdx];
+
+        const neededWords = sanitizedInput.target_word_count - currentWordCount;
+        const targetAddition = Math.min(220, Math.max(90, neededWords + 40));
+        const expansionPrompt = buildExpansionPrompt(targetItem.section, targetItem.text, targetAddition);
+
+        try {
+          const expandedText = await generateSectionFn({
+            section: targetItem.section,
+            plan,
+            priorSectionsText: "",
+            prompt: expansionPrompt,
+            maxTokens: Math.round((targetItem.section.maxTokens || 500) * 1.5),
+          });
+
+          const cleanExpanded = stripOuterMarkdownFence(expandedText || "");
+          const expandedWords = countWords(cleanExpanded);
+          const originalWords = countWords(targetItem.text);
+
+          if (expandedWords > originalWords) {
+            // Verify citations remained valid
+            const expandedCitations = extractCompactCitationTokens(cleanExpanded);
+            const validShortIds = new Set(normalizedEvidence.map((_, idx) => `s${idx + 1}`));
+            const hasInvalidCitation = expandedCitations.some((c) => !validShortIds.has(c.shortId));
+
+            if (!hasInvalidCitation) {
+              sectionTexts[expandIdx] = {
+                section: targetItem.section,
+                text: cleanExpanded,
+              };
+              generatedMarkdown = assembleEssaySections({ plan, sectionTexts });
+            }
+          }
+        } catch (expErr) {
+          // If expansion fails or times out, retain current assembled markdown
+        }
+      }
     } else if (typeof generateFn === "function") {
       generatedMarkdown = await generateFn(prompt);
     }

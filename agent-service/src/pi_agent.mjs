@@ -663,7 +663,8 @@ ${message}`;
       // Sequential section generation function
       const generateSectionFn = async ({ section, plan, priorSectionsText, prompt, maxTokens }) => {
         if (session?.agent?.state?.model) {
-          const effectiveMaxTokens = maxTokens || section?.maxTokens || 450;
+          const providerBonus = selectedProvider === "gemini" ? 1.5 : 1.0;
+          const effectiveMaxTokens = Math.round((maxTokens || section?.maxTokens || 450) * providerBonus);
           session.agent.state.model.maxTokens = effectiveMaxTokens;
         }
         let timerId;
@@ -868,11 +869,11 @@ Output ONLY the Markdown content.`;
       const promptPromise = session.prompt(prompt);
       const timeoutPromise = new Promise((_, reject) => {
         timerId = setTimeout(() => {
-          const tErr = new Error(`Artifact generation timed out after ${config.requestTimeoutMs}ms.`);
+          const tErr = new Error(`Artifact generation timed out after ${config.artifactTimeoutMs}ms.`);
           tErr.statusCode = 504;
           tErr.code = "INFERENCE_TIMEOUT";
           reject(tErr);
-        }, config.requestTimeoutMs);
+        }, config.artifactTimeoutMs);
       });
 
       try {

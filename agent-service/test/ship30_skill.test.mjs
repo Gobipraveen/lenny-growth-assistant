@@ -7,6 +7,8 @@ import {
   createEssayPlan,
   buildGenerationPrompt,
   buildSectionPrompt,
+  buildCompressionPrompt,
+  buildExpansionPrompt,
   validateEssay,
   countWords,
   stripOuterMarkdownFence,
@@ -978,5 +980,91 @@ describe("Ship 30 Section Budgets, Bounded Compression & Deterministic Length Co
         message: /timed out/i,
       }
     );
+  });
+
+  it("16. buildExpansionPrompt constructs prompt preserving citations and requesting depth", () => {
+    const section = { title: "The Breakthrough", topic: "Product Strategy" };
+    const draft = "Here is the brief core principle [S1].";
+    const prompt = buildExpansionPrompt(section, draft, 150);
+
+    assert.ok(prompt.includes("expanding Section \"The Breakthrough\""));
+    assert.ok(prompt.includes("150 more words"));
+    assert.ok(prompt.includes("PRESERVE ALL EXISTING CITATIONS"));
+    assert.ok(prompt.includes("[S1]"));
+  });
+
+  it("17. Bounded underlength expansion triggers when words < 1,100 and elevates essay into 1,100-1,400 range", async () => {
+    let expansionCalled = 0;
+    const mockExpandingGenerator = async ({ prompt, section }) => {
+      const isExpansion = prompt.includes("EXPANSION INSTRUCTIONS") || prompt.includes("Expanding Section");
+      if (isExpansion) {
+        expansionCalled++;
+        // Return expanded section with 250 additional words, preserving citation
+        return (
+          `## ${section.title}\n\n` +
+          "Here is the deep framework that drives sustained product growth [S1]. " +
+          Array(30).fill("Customer insight paired with rigorous prioritization generates compounding product market fit.").join(" ")
+        );
+      }
+
+      // Initial generation: each section produces ~200 words (total ~1,000 words, under 1,100)
+      return (
+        `## ${section.title}\n\n` +
+        Array(18).fill("Building product strategy with validated user research and continuous customer interviews.").join(" ") +
+        " [S1]"
+      );
+    };
+
+    const result = await executeSkillWorkflow({
+      input: {
+        topic: "Expansion Test",
+        audience: "Founders",
+        intended_outcome: "Growth framework",
+        target_word_count: 1250,
+        verified_evidence: sampleEvidence,
+      },
+      generateSectionFn: mockExpandingGenerator,
+    });
+
+    assert.equal(expansionCalled, 1, "Should trigger exactly ONE expansion attempt");
+    assert.ok(result.word_count >= 1100, `Word count should be >= 1100, got ${result.word_count}`);
+    assert.equal(result.validation_results.isValid, true);
+    assert.equal(result.generation_status, "success");
+  });
+
+  it("18. Underlength output stays validation_failed if expansion does not reach 1,100 words", async () => {
+    let expansionCalled = 0;
+    const mockShortGenerator = async ({ prompt, section }) => {
+      const isExpansion = prompt.includes("EXPANSION INSTRUCTIONS") || prompt.includes("Expanding Section");
+      if (isExpansion) {
+        expansionCalled++;
+        // Still returns brief prose
+        return `## ${section.title}\n\nBrief expansion attempt [S1].`;
+      }
+
+      // Initial generation: 5 sections * 150 words = ~750 words
+      return (
+        `## ${section.title}\n\n` +
+        Array(18).fill("Concise product note on customer feedback.").join(" ") +
+        " [S1]"
+      );
+    };
+
+    const result = await executeSkillWorkflow({
+      input: {
+        topic: "Short Test",
+        audience: "Founders",
+        intended_outcome: "Playbook",
+        target_word_count: 1250,
+        verified_evidence: sampleEvidence,
+      },
+      generateSectionFn: mockShortGenerator,
+    });
+
+    assert.equal(expansionCalled, 1, "Should attempt expansion once");
+    assert.ok(result.word_count < 1100);
+    assert.equal(result.validation_results.isValid, false);
+    assert.equal(result.generation_status, "validation_failed");
+    assert.ok(result.validation_results.errors.some((e) => e.includes("too short")));
   });
 });

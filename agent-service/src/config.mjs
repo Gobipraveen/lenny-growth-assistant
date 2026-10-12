@@ -34,6 +34,7 @@ export const config = {
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
   defaultProvider: process.env.LLM_PROVIDER || "ollama",
   requestTimeoutMs: parseInt(process.env.AGENT_REQUEST_TIMEOUT_MS || "60000", 10),
+  artifactTimeoutMs: parseInt(process.env.AGENT_ARTIFACT_TIMEOUT_MS || "150000", 10),
   agentDataDir: path.resolve(AGENT_SERVICE_ROOT, ".pi_runtime"),
   maxBodySizeBytes: 2 * 1024 * 1024 // 2MB limit
 };
