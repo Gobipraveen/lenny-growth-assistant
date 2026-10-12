@@ -332,7 +332,9 @@ All test suites across all three tiers passed sequentially with zero failures:
 * **Host Environment:** Windows 11 with 8.0 GB Physical RAM.
 * **Available Memory:** Free RAM observed at 0.67 GB–0.81 GB throughout live tests.
 * **Load Isolation:** Requests were executed strictly sequentially with zero concurrent inference.
-* **Process Stability:** Node Pi Agent service, FastAPI, Ollama, PostgreSQL, and Vite dev server remained stable without any crashes or memory leaks.
+### 10.7 Evaluation Note on Model Variability
+* **Deterministic Bounds:** Hard validation gates (1,100–1,400 word boundaries, verified chunk UUID mapping, and strict HTML sanitization) deterministically reject invalid or dangerous payloads.
+* **Prose & Visual Variation:** AI-generated prose style, depth of arguments, and specific dashboard color arrangements naturally exhibit stochastic variation across runs and may require human editorial review. Success on test runs does not guarantee identical prose in all future requests.
 
 ---
 

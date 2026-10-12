@@ -68,7 +68,27 @@ E:\lenny-growth-assistant\
 
 ---
 
-## Installation & Setup (Windows)
+## One-Command Quickstart (Windows 11)
+
+To run automated preflight checks, apply database migrations, verify models, and launch all application services in one command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
+```
+
+* **Application UI:** [http://localhost:5173/](http://localhost:5173/)
+* **Backend API Docs:** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+* **Pi Agent Service:** [http://127.0.0.1:8001/health](http://127.0.0.1:8001/health)
+* **Detailed Step-by-Step Test Guide:** See [`docs/reviewer-guide.md`](file:///e:/lenny-growth-assistant/docs/reviewer-guide.md)
+
+To stop all application services cleanly:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\stop.ps1
+```
+
+---
+
+## Manual Installation & Setup (Windows)
 
 All commands are executed from the project root: `E:\lenny-growth-assistant`.
 
@@ -251,14 +271,17 @@ Whenever you update `.env` (such as setting or changing `GEMINI_API_KEY` or `GEM
 * Always check your project status in the [Google Cloud Console](https://console.cloud.google.com/) or [Google AI Studio](https://aistudio.google.com/) if access is denied.
 
 ### 6. Live Verification Status
-* **Ollama (Local):** Verified live end-to-end with real inference (`qwen2.5:1.5b`), citation retrieval against PostgreSQL transcript chunks, and message persistence (PASS).
-* **Google Gemini (Cloud):**
-  - Architecture integration (FastAPI $\rightarrow$ Node.js Pi Agent SDK $\rightarrow$ Google Generative AI API): PASS
-  - Deterministic offline test suites: PASS
-  - End-to-end request dispatch reaching Google API: PASS
-  - Missing-key and provider-error handling: PASS
-  - Live Gemini text generation: BLOCKED (Google API returned HTTP 403 `Forbidden: Your project has been denied access. Please contact support.`)
-  - Live Gemini essays and HTML artifact generation: NOT TESTED
+* **Ollama (Local Default):** Verified live end-to-end with real inference (`qwen2.5:1.5b`), citation retrieval against PostgreSQL transcript chunks, essay drafting, HTML artifact generation, and message persistence (**PASS**).
+* **Google Gemini (Cloud Option):**
+  - Architecture integration (FastAPI $\rightarrow$ Node.js Pi Agent SDK $\rightarrow$ Google Generative AI API): **PASS**
+  - Deterministic offline test suites: **PASS** (267 / 267 total tests passing across Python, Node, and React)
+  - End-to-end request dispatch reaching Google API: **PASS**
+  - Missing-key and provider-error handling: **PASS** (fail-closed, zero secrets leaked, zero silent fallbacks)
+  - Live Gemini Chat text generation: **PASS** (HTTP 200, authentic citations verified, persisted to PostgreSQL)
+  - Live Gemini Ship 30 Essay generation: **PASS** (1,142 words, completed status, 5 sections, 6 authentic citations, 25.3s latency)
+  - Live Gemini HTML/CSS Artifact generation: **PASS** (11,796 characters, completed in 27.9s, zero sanitizer errors/warnings, responsive sandboxed preview)
+
+> **Evaluation Note on Model Variability:** While deterministic validation rules (word count bounds, citation mapping, and HTML security sanitization) strictly enforce safety and structural constraints, AI-generated prose style and specific card layouts may exhibit natural model variation across generation runs and should be reviewed qualitatively.
 
 ---
 
@@ -324,6 +347,8 @@ Example API Response (`GET /api/sessions`):
 
 The Lenny Growth Assistant retrieves source-grounded insights from transcripts in the authoritative archive:
 [https://github.com/ChatPRD/lennys-podcast-transcripts](https://github.com/ChatPRD/lennys-podcast-transcripts).
+
+The local PostgreSQL database contains the curated **flagship dataset (10 core growth episodes, 1,271 chunks)**. To preserve host disk space and memory during evaluation, the full 303-episode upstream archive is not fully indexed locally, though the CLI ingestion pipeline supports it on demand.
 
 ### Ingestion CLI Operations
 
